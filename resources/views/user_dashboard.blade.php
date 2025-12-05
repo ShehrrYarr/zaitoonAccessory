@@ -13,7 +13,7 @@
 
             {{-- Image Banner --}}
             <div class="mb-2">
-                <img src="{{ asset('images/banner.jpg') }}" alt=" Banner" class="img-fluid shadow rounded"
+                <img src="{{ asset('images/zaitoonbanner.jpg') }}" alt=" Banner" class="img-fluid shadow rounded"
                     style="width: 100%; max-height: 250px; object-fit: cover;">
             </div>
 
