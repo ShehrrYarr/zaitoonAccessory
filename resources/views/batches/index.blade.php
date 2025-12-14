@@ -70,6 +70,12 @@
                             <input type="number" id="pay_amount" class="form-control" name="pay_amount">
                         </div>
 
+                        <div class="mb-1">
+                            <label for="barcode" class="form-label">Barcode (Optional)</label>
+                            <input type="text" class="form-control" name="barcode" id="barcode"
+                                placeholder="Enter barcode (leave empty to auto-generate)" value="{{ old('barcode') }}">
+                        </div>
+
 
 
                     </div>

@@ -85,44 +85,68 @@ class AccessoryBatchController extends Controller
 
 
 
+//    public function store(Request $request)
+// {
+//     try {
+//         $validated = $request->validate([
+//             'accessory_id'    => 'required|exists:accessories,id',
+//             'vendor_id'       => 'required|exists:vendors,id',
+//             'qty_purchased'   => 'required|integer|min:1',
+//             'purchase_price'  => 'required|numeric|min:0',
+//             'selling_price'   => 'required|numeric|min:0',
+//             'purchase_date'   => 'required|date',
+//             'description'     => 'nullable|string',
+//         ]);
 
+//         $validated['user_id'] = auth()->id();
+//         $validated['qty_remaining'] = $validated['qty_purchased'];
 
-    // public function store(Request $request)
-    // {
-    //     // dd($request->all());
-    //     try {
-    //         $validated = $request->validate([
-    //             'accessory_id'    => 'required|exists:accessories,id',
-    //             'vendor_id'       => 'required|exists:vendors,id',
-    //             'qty_purchased'   => 'required|integer|min:1',
-    //             'purchase_price'  => 'required|numeric|min:0',
-    //             'purchase_date'   => 'required|date',
-    //         ]);
-    //         $validated['user_id'] = auth()->id(); 
-    //         $validated['qty_remaining'] = $validated['qty_purchased'];
-    
-    //         // Generate a unique barcode, e.g.,
-    //         $lastId = \App\Models\AccessoryBatch::max('id') ?? 0;
-    //         $validated['barcode'] = str_pad($lastId + 1, 5, '0', STR_PAD_LEFT);
-    
-    //         \App\Models\AccessoryBatch::create($validated);
-    
-    //         return redirect()->back()->with('success', 'Batch Added Successfully.');
-    
-    //     } catch (\Illuminate\Validation\ValidationException $e) {
-    //         // Laravel will redirect back with validation errors automatically.
-    //         throw $e;
-    //     } catch (\Exception $e) {
-    //         // Log the error for debugging
-    //         \Log::error('Batch creation failed: ' . $e->getMessage());
-    
-    //         return redirect()->back()
-    //             ->withInput()
-    //             ->with('danger', 'An unexpected error occurred while adding the batch. Please try again.');
-    //     }
-    // }
+//         // Generate a unique barcode
+//         $lastId = \App\Models\AccessoryBatch::max('id') ?? 0;
+//         $validated['barcode'] = str_pad($lastId + 1, 5, '0', STR_PAD_LEFT);
 
-   public function store(Request $request)
+//         $batch = \App\Models\AccessoryBatch::create($validated);
+
+//         // Accounts logic
+//         $totalAmount = $validated['qty_purchased'] * $validated['purchase_price'];
+//         $payAmount = $request->input('pay_amount', 0);
+
+//         // Credit: you owe the vendor for the batch
+//         \App\Models\Accounts::create([
+//             'vendor_id'   => $validated['vendor_id'],
+//             'batch_id'    => $batch->id, // ✅ added
+//             'Credit'      => $totalAmount,
+//             'Debit'       => 0,
+//             'description' => "Batch Purchase: {$batch->barcode} ({$validated['qty_purchased']} x {$validated['purchase_price']})",
+//             'created_by'  => auth()->id(),
+//         ]);
+
+//         // Debit: if you paid any amount now
+//         if ($payAmount > 0) {
+//             sleep(1);
+//             \App\Models\Accounts::create([
+//                 'vendor_id'   => $validated['vendor_id'],
+//                 'batch_id'    => $batch->id, // ✅ added
+//                 'Credit'      => 0,
+//                 'Debit'       => $payAmount,
+//                 'description' => "Payment for Batch: {$batch->barcode}",
+//                 'created_by'  => auth()->id(),
+//             ]);
+//         }
+
+//         return redirect()->back()->with('success', 'Batch Added Successfully.');
+
+//     } catch (\Illuminate\Validation\ValidationException $e) {
+//         throw $e;
+//     } catch (\Exception $e) {
+//         \Log::error('Batch creation failed: ' . $e->getMessage());
+//         return redirect()->back()
+//             ->withInput()
+//             ->with('danger', 'An unexpected error occurred while adding the batch. Please try again.');
+//     }
+// }
+
+public function store(Request $request)
 {
     try {
         $validated = $request->validate([
@@ -133,37 +157,62 @@ class AccessoryBatchController extends Controller
             'selling_price'   => 'required|numeric|min:0',
             'purchase_date'   => 'required|date',
             'description'     => 'nullable|string',
+
+            // ✅ NEW: optional manual barcode
+            'barcode'         => 'nullable|string|max:50',
         ]);
 
         $validated['user_id'] = auth()->id();
         $validated['qty_remaining'] = $validated['qty_purchased'];
 
-        // Generate a unique barcode
-        $lastId = \App\Models\AccessoryBatch::max('id') ?? 0;
-        $validated['barcode'] = str_pad($lastId + 1, 5, '0', STR_PAD_LEFT);
+        // ✅ NEW BARCODE LOGIC (manual OR auto)
+        $manualBarcode = trim((string) $request->input('barcode', ''));
+        $manualBarcode = $manualBarcode !== '' ? $manualBarcode : null;
 
+        if ($manualBarcode) {
+            // check if barcode already exists
+            $exists = \App\Models\AccessoryBatch::where('barcode', $manualBarcode)->exists();
+            if ($exists) {
+                return redirect()->back()
+                    ->withInput()
+                    ->with('danger', 'This barcode already exists. Please use a unique barcode.');
+            }
+
+            $validated['barcode'] = $manualBarcode;
+        } else {
+            // Generate a unique barcode (same as old)
+            $lastId = \App\Models\AccessoryBatch::max('id') ?? 0;
+            $validated['barcode'] = str_pad($lastId + 1, 5, '0', STR_PAD_LEFT);
+
+            // Extra safety: in case it already exists for any reason
+            if (\App\Models\AccessoryBatch::where('barcode', $validated['barcode'])->exists()) {
+                return redirect()->back()
+                    ->withInput()
+                    ->with('danger', 'Auto-generated barcode already exists. Please try again.');
+            }
+        }
+
+        // ✅ unchanged
         $batch = \App\Models\AccessoryBatch::create($validated);
 
-        // Accounts logic
+        // ✅ unchanged Accounts logic
         $totalAmount = $validated['qty_purchased'] * $validated['purchase_price'];
         $payAmount = $request->input('pay_amount', 0);
 
-        // Credit: you owe the vendor for the batch
         \App\Models\Accounts::create([
             'vendor_id'   => $validated['vendor_id'],
-            'batch_id'    => $batch->id, // ✅ added
+            'batch_id'    => $batch->id,
             'Credit'      => $totalAmount,
             'Debit'       => 0,
             'description' => "Batch Purchase: {$batch->barcode} ({$validated['qty_purchased']} x {$validated['purchase_price']})",
             'created_by'  => auth()->id(),
         ]);
 
-        // Debit: if you paid any amount now
         if ($payAmount > 0) {
             sleep(1);
             \App\Models\Accounts::create([
                 'vendor_id'   => $validated['vendor_id'],
-                'batch_id'    => $batch->id, // ✅ added
+                'batch_id'    => $batch->id,
                 'Credit'      => 0,
                 'Debit'       => $payAmount,
                 'description' => "Payment for Batch: {$batch->barcode}",
@@ -182,7 +231,6 @@ class AccessoryBatchController extends Controller
             ->with('danger', 'An unexpected error occurred while adding the batch. Please try again.');
     }
 }
-
 
 
 
