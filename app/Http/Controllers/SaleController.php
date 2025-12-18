@@ -239,272 +239,6 @@ public function salesReport(Request $request)
 
 
 
-public function checkout(Request $request)
-{
-    $data = $request->validate([
-        'vendor_id'         => 'nullable|exists:vendors,id',
-        'customer_name'     => 'nullable|string|max:255',
-        'customer_mobile'   => 'nullable|string|max:20',
-        'items'             => 'required|array|min:1',
-        'items.*.barcode'   => 'required|string',
-        'items.*.qty'       => 'required|integer|min:1',
-        'items.*.price'     => 'required|numeric|min:0',
-        'items.*.accessory' => 'nullable|string',
-        'cart_discount'     => 'nullable|numeric|min:0',
-
-        // NEW: comment on sale
-        'comment'           => 'nullable|string|max:1000',
-
-        // legacy single-payment hints (fallback if payments[] missing)
-        'pay_amount'        => 'nullable|numeric|min:0',
-        'payment_method'    => 'nullable|in:counter,bank',
-        'bank_id'           => 'nullable|exists:banks,id',
-        'reference_no'      => 'nullable|string|max:255',
-
-        // preferred multi-payments
-        'payments'                => 'sometimes|array',
-        'payments.*.method'       => 'required_with:payments|in:counter,bank',
-        'payments.*.bank_id'      => 'nullable|exists:banks,id',
-        'payments.*.amount'       => 'required_with:payments|numeric|min:0.01',
-        'payments.*.reference_no' => 'nullable|string|max:255',
-    ]);
-
-    // Walk-in normalization
-    $customerName   = $data['customer_name']   ?? null;
-    $customerMobile = $data['customer_mobile'] ?? null;
-
-    if (empty($data['vendor_id'])) {
-        $customerName   = $customerName   ?: 'Walk In Customer';
-        $customerMobile = $customerMobile ?: '00000000';
-
-        \App\Models\CustomerInfo::firstOrCreate(
-            ['mobile' => $customerMobile],
-            ['name'   => $customerName]
-        );
-    }
-
-    try {
-        $sale = \DB::transaction(function () use ($data, $customerName, $customerMobile, $request) {
-
-            // 1) Create Sale
-            $sale = \App\Models\Sale::create([
-                'vendor_id'       => $data['vendor_id'] ?? null,
-                'customer_name'   => $customerName,
-                'customer_mobile' => $customerMobile,
-                'sale_date'       => now(),
-                'total_amount'    => 0,
-                'discount_amount' => 0,
-                'pay_amount'      => 0,
-                'user_id'         => auth()->id(),
-                'status'          => 'pending',
-                'approved_at'     => null,
-                'approved_by'     => null,
-                // NEW: persist comment
-                'comment'         => $data['comment'] ?? null,
-            ]);
-
-            // 2) Items & stock
-            $gross = 0.0;
-            foreach ($data['items'] as $item) {
-                $batch = \App\Models\AccessoryBatch::where('barcode', $item['barcode'])
-                    ->lockForUpdate()
-                    ->first();
-
-                if (!$batch) throw new \Exception('Batch not found for barcode ' . $item['barcode']);
-                if ($batch->qty_remaining < $item['qty']) {
-                    throw new \Exception('Insufficient stock for batch ' . $item['barcode'] .
-                                         '. Remaining: ' . $batch->qty_remaining);
-                }
-
-                $qty       = (int) $item['qty'];
-                $unitPrice = (float) $item['price']; // or (float)$batch->selling_price
-                $line      = $unitPrice * $qty;
-                $gross    += $line;
-
-                \App\Models\SaleItem::create([
-                    'sale_id'            => $sale->id,
-                    'accessory_batch_id' => $batch->id,
-                    'accessory_id'       => $batch->accessory_id,
-                    'quantity'           => $qty,
-                    'price_per_unit'     => $unitPrice,
-                    'subtotal'           => $line,
-                    'user_id'            => auth()->id(),
-                ]);
-
-                $batch->decrement('qty_remaining', $qty);
-            }
-
-            // 3) Totals
-            $discount = max(0.0, (float) ($data['cart_discount'] ?? 0));
-            if ($discount > $gross) $discount = $gross;
-            $net = $gross - $discount;
-
-            $sale->total_amount    = $net;
-            $sale->discount_amount = $discount;
-            $sale->save();
-
-            // 4) Payments for BOTH flows
-            $paymentsInput = $request->input('payments', []);
-            $hasPayments   = is_array($paymentsInput) && count($paymentsInput) > 0;
-
-            if (!empty($data['vendor_id'])) {
-                // Vendor ledger: debit full net
-                \App\Models\Accounts::create([
-                    'vendor_id'   => $data['vendor_id'],
-                    'Debit'       => $sale->total_amount,
-                    'Credit'      => 0,
-                    'description' => "Sale Invoice #{$sale->id}",
-                    'created_by'  => auth()->id(),
-                ]);
-
-                $totalPaid = 0.0;
-
-                if ($hasPayments) {
-                    $soFar = 0.0;
-                    foreach ($paymentsInput as $p) {
-                        $method = $p['method'] ?? null;
-                        $amount = isset($p['amount']) ? (float)$p['amount'] : 0.0;
-                        if (!$method || $amount <= 0) continue;
-
-                        $remaining = (float)$sale->total_amount - $soFar;
-                        if ($remaining <= 0) break;
-                        $use = min($amount, $remaining);
-
-                        $bankId      = ($method === 'bank') ? ($p['bank_id'] ?? null) : null;
-                        $referenceNo = $p['reference_no'] ?? null;
-
-                        \App\Models\SalePayment::create([
-                            'sale_id'      => $sale->id,
-                            'method'       => $method,
-                            'bank_id'      => $bankId,
-                            'amount'       => $use,
-                            'reference_no' => $referenceNo,
-                            'processed_by' => auth()->id(),
-                            'paid_at'      => now(),
-                        ]);
-
-                        $desc = "Payment for Invoice #{$sale->id} via " . strtoupper($method);
-                        if ($bankId) {
-                            $bankName = optional(\App\Models\Bank::find($bankId))->name;
-                            if ($bankName) $desc .= " ({$bankName})";
-                        }
-                        if (!empty($referenceNo)) $desc .= " Ref: {$referenceNo}";
-
-                        \App\Models\Accounts::create([
-                            'vendor_id'   => $data['vendor_id'],
-                            'Debit'       => 0,
-                            'Credit'      => $use,
-                            'description' => $desc,
-                            'created_by'  => auth()->id(),
-                        ]);
-
-                        $soFar     += $use;
-                        $totalPaid += $use;
-                    }
-                } else {
-                    // Legacy single payment hint
-                    $legacyPay = max(0.0, (float) ($data['pay_amount'] ?? 0));
-                    $legacyPay = min($legacyPay, (float)$sale->total_amount);
-
-                    if ($legacyPay > 0) {
-                        $method = $data['payment_method'] ?? 'counter';
-                        if (!in_array($method, ['counter', 'bank'], true)) $method = 'counter';
-
-                        $bankId      = $method === 'bank' ? ($data['bank_id'] ?? null) : null;
-                        $referenceNo = $method === 'bank' ? ($data['reference_no'] ?? null) : null;
-
-                        \App\Models\SalePayment::create([
-                            'sale_id'      => $sale->id,
-                            'method'       => $method,
-                            'bank_id'      => $bankId,
-                            'amount'       => $legacyPay,
-                            'reference_no' => $referenceNo,
-                            'processed_by' => auth()->id(),
-                            'paid_at'      => now(),
-                        ]);
-
-                        $desc = "Payment for Invoice #{$sale->id} via " . strtoupper($method);
-                        if ($bankId) {
-                            $bankName = optional(\App\Models\Bank::find($bankId))->name;
-                            if ($bankName) $desc .= " ({$bankName})";
-                        }
-                        if (!empty($referenceNo)) $desc .= " Ref: {$referenceNo}";
-
-                        \App\Models\Accounts::create([
-                            'vendor_id'   => $data['vendor_id'],
-                            'Debit'       => 0,
-                            'Credit'      => $legacyPay,
-                            'description' => $desc,
-                            'created_by'  => auth()->id(),
-                        ]);
-
-                        $totalPaid = $legacyPay;
-                    }
-                }
-
-                $sale->pay_amount = $totalPaid;
-                $sale->save();
-
-            } else {
-                // Walk-in: MUST record a full payment; if none provided, synthesize one
-                if ($hasPayments) {
-                    $soFar = 0.0;
-                    foreach ($paymentsInput as $p) {
-                        $method = $p['method'] ?? 'counter';
-                        $amount = isset($p['amount']) ? (float)$p['amount'] : 0.0;
-                        if ($amount <= 0) continue;
-
-                        $remaining = (float)$sale->total_amount - $soFar;
-                        if ($remaining <= 0) break;
-                        $use = min($amount, $remaining);
-
-                        $bankId      = ($method === 'bank') ? ($p['bank_id'] ?? null) : null;
-                        $referenceNo = $p['reference_no'] ?? null;
-
-                        \App\Models\SalePayment::create([
-                            'sale_id'      => $sale->id,
-                            'method'       => in_array($method, ['counter','bank'], true) ? $method : 'counter',
-                            'bank_id'      => $bankId,
-                            'amount'       => $use,
-                            'reference_no' => $referenceNo,
-                            'processed_by' => auth()->id(),
-                            'paid_at'      => now(),
-                        ]);
-
-                        $soFar += $use;
-                    }
-                } else {
-                    \App\Models\SalePayment::create([
-                        'sale_id'      => $sale->id,
-                        'method'       => 'counter',
-                        'bank_id'      => null,
-                        'amount'       => $sale->total_amount,
-                        'reference_no' => null,
-                        'processed_by' => auth()->id(),
-                        'paid_at'      => now(),
-                    ]);
-                }
-
-                $sale->pay_amount = $sale->total_amount;
-                $sale->save();
-            }
-
-            return $sale;
-        });
-
-        return response()->json([
-            'success'        => true,
-            'invoice_number' => $sale->id,
-        ]);
-
-    } catch (\Throwable $e) {
-        \Log::error('Checkout Error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
-        return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
-    }
-}
-
-
-
 // public function checkout(Request $request)
 // {
 //     $data = $request->validate([
@@ -517,6 +251,9 @@ public function checkout(Request $request)
 //         'items.*.price'     => 'required|numeric|min:0',
 //         'items.*.accessory' => 'nullable|string',
 //         'cart_discount'     => 'nullable|numeric|min:0',
+
+//         // NEW: comment on sale
+//         'comment'           => 'nullable|string|max:1000',
 
 //         // legacy single-payment hints (fallback if payments[] missing)
 //         'pay_amount'        => 'nullable|numeric|min:0',
@@ -532,7 +269,7 @@ public function checkout(Request $request)
 //         'payments.*.reference_no' => 'nullable|string|max:255',
 //     ]);
 
-//     // Walk‑in normalization
+//     // Walk-in normalization
 //     $customerName   = $data['customer_name']   ?? null;
 //     $customerMobile = $data['customer_mobile'] ?? null;
 
@@ -562,6 +299,8 @@ public function checkout(Request $request)
 //                 'status'          => 'pending',
 //                 'approved_at'     => null,
 //                 'approved_by'     => null,
+//                 // NEW: persist comment
+//                 'comment'         => $data['comment'] ?? null,
 //             ]);
 
 //             // 2) Items & stock
@@ -707,9 +446,8 @@ public function checkout(Request $request)
 //                 $sale->save();
 
 //             } else {
-//                 // Walk‑in: MUST record a full payment; if none provided, synthesize one
+//                 // Walk-in: MUST record a full payment; if none provided, synthesize one
 //                 if ($hasPayments) {
-//                     // Clamp total to net; ignore extra
 //                     $soFar = 0.0;
 //                     foreach ($paymentsInput as $p) {
 //                         $method = $p['method'] ?? 'counter';
@@ -736,7 +474,6 @@ public function checkout(Request $request)
 //                         $soFar += $use;
 //                     }
 //                 } else {
-//                     // Fallback: single counter payment for full net (shouldn't happen with our JS)
 //                     \App\Models\SalePayment::create([
 //                         'sale_id'      => $sale->id,
 //                         'method'       => 'counter',
@@ -748,10 +485,8 @@ public function checkout(Request $request)
 //                     ]);
 //                 }
 
-//                 // Walk‑in considered fully paid
 //                 $sale->pay_amount = $sale->total_amount;
 //                 $sale->save();
-//                 // No Accounts entries for walk‑ins
 //             }
 
 //             return $sale;
@@ -769,6 +504,291 @@ public function checkout(Request $request)
 // }
 
 
+
+public function checkout(Request $request)
+{
+    $data = $request->validate([
+        'vendor_id'         => 'nullable|exists:vendors,id',
+        'customer_name'     => 'nullable|string|max:255',
+        'customer_mobile'   => 'nullable|string|max:20',
+        'items'             => 'required|array|min:1',
+        'items.*.barcode'   => 'required|string',
+        'items.*.qty'       => 'required|integer|min:1',
+        'items.*.price'     => 'required|numeric|min:0',
+        'items.*.accessory' => 'nullable|string',
+
+        // Discount amount OR Discount percent
+        'cart_discount'            => 'nullable|numeric|min:0',
+        'cart_discount_percent'    => 'nullable|numeric|min:0|max:100',
+
+        'comment'           => 'nullable|string|max:1000',
+
+        // legacy single-payment hints (fallback if payments[] missing)
+        'pay_amount'        => 'nullable|numeric|min:0',
+        'payment_method'    => 'nullable|in:counter,bank',
+        'bank_id'           => 'nullable|exists:banks,id',
+        'reference_no'      => 'nullable|string|max:255',
+
+        // preferred multi-payments
+        'payments'                => 'sometimes|array',
+        'payments.*.method'       => 'required_with:payments|in:counter,bank',
+        'payments.*.bank_id'      => 'nullable|exists:banks,id',
+        'payments.*.amount'       => 'required_with:payments|numeric|min:0.01',
+        'payments.*.reference_no' => 'nullable|string|max:255',
+    ]);
+
+    // ✅ backend check: only one discount type allowed
+    $discAmountIn  = (float) ($data['cart_discount'] ?? 0);
+    $discPercentIn = (float) ($data['cart_discount_percent'] ?? 0);
+
+    if ($discAmountIn > 0 && $discPercentIn > 0) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Use only ONE discount: either Discount Amount OR Discount %. Not both.'
+        ], 422);
+    }
+
+    // Walk-in normalization
+    $customerName   = $data['customer_name']   ?? null;
+    $customerMobile = $data['customer_mobile'] ?? null;
+
+    if (empty($data['vendor_id'])) {
+        $customerName   = $customerName   ?: 'Walk In Customer';
+        $customerMobile = $customerMobile ?: '00000000';
+
+        \App\Models\CustomerInfo::firstOrCreate(
+            ['mobile' => $customerMobile],
+            ['name'   => $customerName]
+        );
+    }
+
+    try {
+        $sale = \DB::transaction(function () use ($data, $customerName, $customerMobile, $request, $discAmountIn, $discPercentIn) {
+
+            // 1) Create Sale
+            $sale = \App\Models\Sale::create([
+                'vendor_id'       => $data['vendor_id'] ?? null,
+                'customer_name'   => $customerName,
+                'customer_mobile' => $customerMobile,
+                'sale_date'       => now(),
+                'total_amount'    => 0,
+                'discount_amount' => 0,
+                'pay_amount'      => 0,
+                'user_id'         => auth()->id(),
+                'status'          => 'pending',
+                'approved_at'     => null,
+                'approved_by'     => null,
+                'comment'         => $data['comment'] ?? null,
+            ]);
+
+            // 2) Items & stock
+            $gross = 0.0;
+
+            foreach ($data['items'] as $item) {
+                $batch = \App\Models\AccessoryBatch::where('barcode', $item['barcode'])
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$batch) throw new \Exception('Batch not found for barcode ' . $item['barcode']);
+                if ($batch->qty_remaining < $item['qty']) {
+                    throw new \Exception('Insufficient stock for batch ' . $item['barcode'] .
+                        '. Remaining: ' . $batch->qty_remaining);
+                }
+
+                $qty       = (int) $item['qty'];
+                $unitPrice = (float) $item['price'];
+                $line      = $unitPrice * $qty;
+                $gross    += $line;
+
+                \App\Models\SaleItem::create([
+                    'sale_id'            => $sale->id,
+                    'accessory_batch_id' => $batch->id,
+                    'accessory_id'       => $batch->accessory_id,
+                    'quantity'           => $qty,
+                    'price_per_unit'     => $unitPrice,
+                    'subtotal'           => $line,
+                    'user_id'            => auth()->id(),
+                ]);
+
+                $batch->decrement('qty_remaining', $qty);
+            }
+
+            // 3) Totals (✅ support amount OR percent)
+            $discount = 0.0;
+
+            if ($discPercentIn > 0) {
+                $discount = $gross * ($discPercentIn / 100);
+            } else {
+                $discount = $discAmountIn;
+            }
+
+            if ($discount < 0) $discount = 0;
+            if ($discount > $gross) $discount = $gross;
+
+            $net = $gross - $discount;
+
+            $sale->total_amount    = $net;
+            $sale->discount_amount = $discount;
+            $sale->save();
+
+            // 4) Payments logic (UNCHANGED)
+            $paymentsInput = $request->input('payments', []);
+            $hasPayments   = is_array($paymentsInput) && count($paymentsInput) > 0;
+
+            if (!empty($data['vendor_id'])) {
+                // Vendor ledger: debit full net
+                \App\Models\Accounts::create([
+                    'vendor_id'   => $data['vendor_id'],
+                    'Debit'       => $sale->total_amount,
+                    'Credit'      => 0,
+                    'description' => "Sale Invoice #{$sale->id}",
+                    'created_by'  => auth()->id(),
+                ]);
+
+                $totalPaid = 0.0;
+
+                if ($hasPayments) {
+                    $soFar = 0.0;
+                    foreach ($paymentsInput as $p) {
+                        $method = $p['method'] ?? null;
+                        $amount = isset($p['amount']) ? (float)$p['amount'] : 0.0;
+                        if (!$method || $amount <= 0) continue;
+
+                        $remaining = (float)$sale->total_amount - $soFar;
+                        if ($remaining <= 0) break;
+                        $use = min($amount, $remaining);
+
+                        $bankId      = ($method === 'bank') ? ($p['bank_id'] ?? null) : null;
+                        $referenceNo = $p['reference_no'] ?? null;
+
+                        \App\Models\SalePayment::create([
+                            'sale_id'      => $sale->id,
+                            'method'       => $method,
+                            'bank_id'      => $bankId,
+                            'amount'       => $use,
+                            'reference_no' => $referenceNo,
+                            'processed_by' => auth()->id(),
+                            'paid_at'      => now(),
+                        ]);
+
+                        $desc = "Payment for Invoice #{$sale->id} via " . strtoupper($method);
+                        if ($bankId) {
+                            $bankName = optional(\App\Models\Bank::find($bankId))->name;
+                            if ($bankName) $desc .= " ({$bankName})";
+                        }
+                        if (!empty($referenceNo)) $desc .= " Ref: {$referenceNo}";
+
+                        \App\Models\Accounts::create([
+                            'vendor_id'   => $data['vendor_id'],
+                            'Debit'       => 0,
+                            'Credit'      => $use,
+                            'description' => $desc,
+                            'created_by'  => auth()->id(),
+                        ]);
+
+                        $soFar     += $use;
+                        $totalPaid += $use;
+                    }
+                } else {
+                    $legacyPay = max(0.0, (float) ($data['pay_amount'] ?? 0));
+                    $legacyPay = min($legacyPay, (float)$sale->total_amount);
+
+                    if ($legacyPay > 0) {
+                        $method = $data['payment_method'] ?? 'counter';
+                        if (!in_array($method, ['counter', 'bank'], true)) $method = 'counter';
+
+                        $bankId      = $method === 'bank' ? ($data['bank_id'] ?? null) : null;
+                        $referenceNo = $method === 'bank' ? ($data['reference_no'] ?? null) : null;
+
+                        \App\Models\SalePayment::create([
+                            'sale_id'      => $sale->id,
+                            'method'       => $method,
+                            'bank_id'      => $bankId,
+                            'amount'       => $legacyPay,
+                            'reference_no' => $referenceNo,
+                            'processed_by' => auth()->id(),
+                            'paid_at'      => now(),
+                        ]);
+
+                        $desc = "Payment for Invoice #{$sale->id} via " . strtoupper($method);
+                        if ($bankId) {
+                            $bankName = optional(\App\Models\Bank::find($bankId))->name;
+                            if ($bankName) $desc .= " ({$bankName})";
+                        }
+                        if (!empty($referenceNo)) $desc .= " Ref: {$referenceNo}";
+
+                        \App\Models\Accounts::create([
+                            'vendor_id'   => $data['vendor_id'],
+                            'Debit'       => 0,
+                            'Credit'      => $legacyPay,
+                            'description' => $desc,
+                            'created_by'  => auth()->id(),
+                        ]);
+
+                        $totalPaid = $legacyPay;
+                    }
+                }
+
+                $sale->pay_amount = $totalPaid;
+                $sale->save();
+
+            } else {
+                // Walk-in: MUST record full payment
+                if ($hasPayments) {
+                    $soFar = 0.0;
+                    foreach ($paymentsInput as $p) {
+                        $method = $p['method'] ?? 'counter';
+                        $amount = isset($p['amount']) ? (float)$p['amount'] : 0.0;
+                        if ($amount <= 0) continue;
+
+                        $remaining = (float)$sale->total_amount - $soFar;
+                        if ($remaining <= 0) break;
+                        $use = min($amount, $remaining);
+
+                        $bankId      = ($method === 'bank') ? ($p['bank_id'] ?? null) : null;
+                        $referenceNo = $p['reference_no'] ?? null;
+
+                        \App\Models\SalePayment::create([
+                            'sale_id'      => $sale->id,
+                            'method'       => in_array($method, ['counter','bank'], true) ? $method : 'counter',
+                            'bank_id'      => $bankId,
+                            'amount'       => $use,
+                            'reference_no' => $referenceNo,
+                            'processed_by' => auth()->id(),
+                            'paid_at'      => now(),
+                        ]);
+
+                        $soFar += $use;
+                    }
+                } else {
+                    \App\Models\SalePayment::create([
+                        'sale_id'      => $sale->id,
+                        'method'       => 'counter',
+                        'bank_id'      => null,
+                        'amount'       => $sale->total_amount,
+                        'reference_no' => null,
+                        'processed_by' => auth()->id(),
+                        'paid_at'      => now(),
+                    ]);
+                }
+
+                $sale->pay_amount = $sale->total_amount;
+                $sale->save();
+            }
+
+            return $sale;
+        });
+
+        return response()->json([
+            'success'        => true,
+            'invoice_number' => $sale->id,
+        ]);
+
+    } catch (\Throwable $e) {
+        \Log::error('Checkout Error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+        return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+    }
+}
 
 
 
