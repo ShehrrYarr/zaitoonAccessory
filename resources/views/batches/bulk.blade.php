@@ -4,264 +4,267 @@
 <meta name="csrf-token" content="{{ csrf_token() }}">
 
 <style>
-    .card {
-        border-radius: .65rem;
-        box-shadow: 0 6px 18px rgba(0, 0, 0, .06);
-    }
+  .card {
+    border-radius: .65rem;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .06);
+  }
 
-    .card-header {
-        background: #f7f9fc;
-        font-weight: 600;
-    }
+  .card-header {
+    background: #f7f9fc;
+    font-weight: 600;
+  }
 
-    .muted {
-        color: #6b7280;
-        font-size: .875rem;
-    }
+  .muted {
+    color: #6b7280;
+    font-size: .875rem;
+  }
 
-    .cursor-disabled {
-        pointer-events: none;
-        opacity: .6;
-    }
+  .cursor-disabled {
+    pointer-events: none;
+    opacity: .6;
+  }
 
-    .overlay-blur {
-        position: fixed;
-        inset: 0;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        backdrop-filter: blur(4px);
-        background: rgba(255, 255, 255, .35);
-        z-index: 9999;
-    }
+  .overlay-blur {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+    background: rgba(255, 255, 255, .35);
+    z-index: 9999;
+  }
 
-    .overlay-blur .box {
-        background: #fff;
-        padding: 16px 20px;
-        border-radius: 10px;
-        box-shadow: 0 12px 30px rgba(0, 0, 0, .15);
-        font-weight: 600;
-    }
+  .overlay-blur .box {
+    background: #fff;
+    padding: 16px 20px;
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .15);
+    font-weight: 600;
+  }
 
-    .action-bar {
-        position: sticky;
-        bottom: 0;
-        z-index: 10;
-        background: #fff;
-        border-top: 1px solid #e5e7eb;
-        padding: 12px 16px;
-        box-shadow: 0 -4px 16px rgba(0, 0, 0, .04);
-    }
+  .action-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    background: #fff;
+    border-top: 1px solid #e5e7eb;
+    padding: 12px 16px;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, .04);
+  }
 
-    .action-bar .summary {
-        font-weight: 600;
-    }
+  .action-bar .summary {
+    font-weight: 600;
+  }
 
-    .table thead th {
-        white-space: nowrap;
-    }
+  .table thead th {
+    white-space: nowrap;
+  }
 </style>
 
 <div class="app-content content">
-    <div class="content-overlay"></div>
-    <div class="content-wrapper">
-        <div class="content-header row"></div>
+  <div class="content-overlay"></div>
+  <div class="content-wrapper">
+    <div class="content-header row"></div>
 
-        <div class="container-fluid">
-            <h3 class="mb-3">Bulk Add Batches</h3>
+    <div class="container-fluid">
+      <h3 class="mb-3">Bulk Add Batches</h3>
 
-            {{-- 1) Vendor --}}
-            <div class="card mb-3">
-                <div class="card-body">
-                    <label class="mb-1">Vendor</label>
-                    <select id="vendor_id" class="form-control">
-                        <option value="">Select Vendor</option>
-                        @foreach ($vendors as $v)
-                        <option value="{{ $v->id }}">{{ $v->name }} ({{ $v->mobile_no }})</option>
-                        @endforeach
-                    </select>
-                    <div class="muted mt-1">Choose vendor to enable accessory selection.</div>
-                </div>
-            </div>
+      {{-- 1) Vendor --}}
+      <div class="card mb-3">
+        <div class="card-body">
+          <label class="mb-1">Vendor</label>
+          <select id="vendor_id" class="form-control">
+            <option value="">Select Vendor</option>
+            @foreach ($vendors as $v)
+            <option value="{{ $v->id }}">{{ $v->name }} ({{ $v->mobile_no }})</option>
+            @endforeach
+          </select>
+          <div class="muted mt-1">Choose vendor to enable accessory selection.</div>
+        </div>
+      </div>
 
-            {{-- 2) Accessories (with search + JS pagination) --}}
-            <div class="card mb-3">
-                <div class="card-header d-flex align-items-center justify-content-between">
-                    <span>Accessories</span>
-                    <input id="searchBox" type="search" class="form-control form-control-sm"
-                        placeholder="Search accessory, company, group..." style="max-width: 320px;">
-                </div>
-
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover mb-0" id="accessoriesTable">
-                            <thead class="thead-light">
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Company</th>
-                                    <th>Group</th>
-                                    <th>Min Qty</th>
-                                    <th style="width:110px;"></th>
-                                </tr>
-                            </thead>
-
-                            <tbody id="accessoriesBody" class="cursor-disabled">
-                                @foreach ($accessories as $a)
-                                <tr data-accessory-id="{{ $a->id }}" data-name="{{ strtolower($a->name) }}"
-                                    data-company="{{ strtolower(optional($a->company)->name) }}"
-                                    data-group="{{ strtolower(optional($a->group)->name) }}">
-                                    <td>{{ $a->name }}</td>
-                                    <td>{{ optional($a->company)->name }}</td>
-                                    <td>{{ optional($a->group)->name }}</td>
-                                    <td>{{ $a->min_qty }}</td>
-                                    <td>
-                                        <button class="btn btn-primary btn-sm selectAccessory" disabled>Select</button>
-                                    </td>
-                                </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="p-2 muted">Click <em>Select</em> to add batch details via popup.</div>
-
-                    {{-- Pagination UI --}}
-                    <div class="p-2 d-flex justify-content-between align-items-center">
-                        <div class="muted" id="pageInfo">Showing 0–0 of 0</div>
-                        <div id="pagination" class="btn-group btn-group-sm"></div>
-                    </div>
-                </div>
-            </div>
-
-            {{-- 3) Selected Batches --}}
-            <div class="card mb-0">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>Selected Batches</span>
-                    <div class="text-right">
-                        <div class="muted">Items: <strong id="itemsCount">0</strong></div>
-                        <div>Total (Qty × Purchase): <strong id="grandTotal">0.00</strong></div>
-                    </div>
-                </div>
-
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-striped table-bordered mb-0" id="selectedTable">
-                            <thead class="thead-light">
-                                <tr>
-                                    <th>#</th>
-                                    <th>Accessory</th>
-                                    <th>Qty</th>
-                                    <th>Purchase</th>
-                                    <th>Selling</th>
-                                    <th>Purchase Date</th>
-                                    <th>Description</th>
-                                    <th>Line Total</th>
-                                    <th style="width:80px;"></th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                            <tfoot>
-                                <tr>
-                                    <th colspan="7" class="text-right">Grand Total</th>
-                                    <th id="grandTotalFoot">0.00</th>
-                                    <th></th>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-
-                {{-- 4) Sticky bottom action bar --}}
-                <div class="action-bar d-flex flex-wrap align-items-center justify-content-between">
-                    <div class="summary">
-                        <span class="mr-3">Items: <span id="itemsCountBar">0</span></span>
-                        <span>Grand Total: <span id="grandTotalBar">0.00</span></span>
-                    </div>
-
-                    <div class="d-flex align-items-center">
-                        <div class="mr-2">
-                            <label class="mb-1">Pay Amount (for all)</label>
-                            <input type="number" id="payAmount" class="form-control" step="0.01" min="0" value="0"
-                                style="min-width: 220px;">
-                        </div>
-                        <button id="submitAllBtn" class="btn btn-success ml-2" disabled>Submit All</button>
-                    </div>
-                </div>
-            </div>
+      {{-- 2) Accessories --}}
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <span>Accessories</span>
+          <input id="searchBox" type="search" class="form-control form-control-sm"
+            placeholder="Search accessory, company, group..." style="max-width: 320px;">
         </div>
 
-        {{-- Modal: Add details for a selected accessory --}}
-        <div class="modal fade" id="batchModal" tabindex="-1" role="dialog" aria-labelledby="batchModalLabel"
-            aria-hidden="true">
-            <div class="modal-dialog" role="document">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">
-                            Add Batch — <span id="modalAccessoryName"></span>
-                        </h5>
-                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                            <span>&times;</span>
-                        </button>
-                    </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="accessoriesTable">
+              <thead class="thead-light">
+                <tr>
+                  <th>Name</th>
+                  <th>Company</th>
+                  <th>Group</th>
+                  <th>Min Qty</th>
+                  <th style="width:110px;"></th>
+                </tr>
+              </thead>
 
-                    <div class="modal-body">
-                        <div class="form-group mb-2">
-                            <label>Purchase Date</label>
-                            <input type="date" class="form-control" id="m_purchase_date"
-                                value="{{ now()->toDateString() }}">
-                        </div>
+              <tbody id="accessoriesBody" class="cursor-disabled">
+                @foreach ($accessories as $a)
+                <tr data-accessory-id="{{ $a->id }}" data-name="{{ strtolower($a->name) }}"
+                  data-company="{{ strtolower(optional($a->company)->name) }}"
+                  data-group="{{ strtolower(optional($a->group)->name) }}">
+                  <td>{{ $a->name }}</td>
+                  <td>{{ optional($a->company)->name }}</td>
+                  <td>{{ optional($a->group)->name }}</td>
+                  <td>{{ $a->min_qty }}</td>
+                  <td>
+                    <button class="btn btn-primary btn-sm selectAccessory" disabled>Select</button>
+                  </td>
+                </tr>
+                @endforeach
+              </tbody>
+            </table>
+          </div>
 
-                        <div class="form-group mb-2">
-                            <label>Description (Optional)</label>
-                            <input type="text" class="form-control" id="m_description" placeholder="Enter description">
-                        </div>
+          <div class="p-2 muted">Click <em>Select</em> to add batch details via popup.</div>
 
-                        {{-- ✅ NEW: optional barcode --}}
-                        <div class="form-group mb-2">
-                            <label>Barcode (Optional)</label>
-                            <input type="text" class="form-control" id="m_barcode"
-                                placeholder="Enter barcode (leave empty to auto-generate)">
-                        </div>
+          {{-- Pagination UI --}}
+          <div class="p-2 d-flex justify-content-between align-items-center">
+            <div class="muted" id="pageInfo">Showing 0–0 of 0</div>
+            <div id="pagination" class="btn-group btn-group-sm"></div>
+          </div>
+        </div>
+      </div>
 
-                        <div class="form-row">
-                            <div class="form-group col-4">
-                                <label>Quantity Purchased</label>
-                                <input type="number" class="form-control" id="m_qty" min="1" value="1">
-                            </div>
-                            <div class="form-group col-4">
-                                <label>Purchase Price (per unit)</label>
-                                <input type="number" class="form-control" id="m_pprice" step="0.01" min="0" value="0"
-                                    required>
-                            </div>
-                            <div class="form-group col-4">
-                                <label>Selling Price (per unit)</label>
-                                <input type="number" class="form-control" id="m_sprice" step="0.01" min="0" value="0"
-                                    required>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="modal-footer">
-                        <button id="modalAddBtn" type="button" class="btn btn-primary">Add</button>
-                    </div>
-                </div>
-            </div>
+      {{-- 3) Selected Batches --}}
+      <div class="card mb-0">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>Selected Batches</span>
+          <div class="text-right">
+            <div class="muted">Items: <strong id="itemsCount">0</strong></div>
+            <div>Total (Qty × Purchase): <strong id="grandTotal">0.00</strong></div>
+          </div>
         </div>
 
-        {{-- Blur overlay --}}
-        <div class="overlay-blur" id="overlay">
-            <div class="box">
-                <div class="spinner-border mr-2" role="status" aria-hidden="true"></div>
-                Storing… Please wait
-            </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-striped table-bordered mb-0" id="selectedTable">
+              <thead class="thead-light">
+                <tr>
+                  <th>#</th>
+                  <th>Accessory</th>
+                  <th>Qty</th>
+                  <th>Purchase</th>
+                  <th>Selling</th>
+                  <th>Purchase Date</th>
+                  <th>Description</th>
+                  <th>Line Total</th>
+                  <th style="width:80px;"></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+              <tfoot>
+                <tr>
+                  <th colspan="7" class="text-right">Grand Total</th>
+                  <th id="grandTotalFoot">0.00</th>
+                  <th></th>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
 
+        {{-- 4) Sticky bottom action bar --}}
+        <div class="action-bar d-flex flex-wrap align-items-center justify-content-between">
+          <div class="summary">
+            <span class="mr-3">Items: <span id="itemsCountBar">0</span></span>
+            <span>Grand Total: <span id="grandTotalBar">0.00</span></span>
+          </div>
+
+          <div class="d-flex align-items-center flex-wrap">
+            {{-- ✅ NEW: Percentage --}}
+            <div class="mr-2">
+              <label class="mb-1">Percentage (%)</label>
+              <input type="number" id="payPercent" class="form-control" step="0.01" min="0" max="100" value="0"
+                style="min-width: 180px;">
+            </div>
+
+            {{-- Pay amount --}}
+            <div class="mr-2">
+              <label class="mb-1">Pay Amount (for all)</label>
+              <input type="number" id="payAmount" class="form-control" step="0.01" min="0" value="0"
+                style="min-width: 220px;">
+            </div>
+
+            <button id="submitAllBtn" class="btn btn-success ml-2" disabled>Submit All</button>
+          </div>
+        </div>
+      </div>
     </div>
+
+    {{-- Modal --}}
+    <div class="modal fade" id="batchModal" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Add Batch — <span id="modalAccessoryName"></span></h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span>&times;</span>
+            </button>
+          </div>
+
+          <div class="modal-body">
+            <div class="form-group mb-2">
+              <label>Purchase Date</label>
+              <input type="date" class="form-control" id="m_purchase_date" value="{{ now()->toDateString() }}">
+            </div>
+
+            <div class="form-group mb-2">
+              <label>Description (Optional)</label>
+              <input type="text" class="form-control" id="m_description" placeholder="Enter description">
+            </div>
+
+            {{-- Optional barcode --}}
+            <div class="form-group mb-2">
+              <label>Barcode (Optional)</label>
+              <input type="text" class="form-control" id="m_barcode"
+                placeholder="Enter barcode (leave empty to auto-generate)">
+            </div>
+
+            <div class="form-row">
+              <div class="form-group col-4">
+                <label>Quantity Purchased</label>
+                <input type="number" class="form-control" id="m_qty" min="1" value="1">
+              </div>
+              <div class="form-group col-4">
+                <label>Purchase Price (per unit)</label>
+                <input type="number" class="form-control" id="m_pprice" step="0.01" min="0" value="0" required>
+              </div>
+              <div class="form-group col-4">
+                <label>Selling Price (per unit)</label>
+                <input type="number" class="form-control" id="m_sprice" step="0.01" min="0" value="0" required>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button id="modalAddBtn" type="button" class="btn btn-primary">Add</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {{-- Overlay --}}
+    <div class="overlay-blur" id="overlay">
+      <div class="box">
+        <div class="spinner-border mr-2" role="status" aria-hidden="true"></div>
+        Storing… Please wait
+      </div>
+    </div>
+
+  </div>
 </div>
 
 <script>
-    (function () {
-    // --- Select2 (AJAX) for Vendor ---
+  (function () {
+    // Select2 vendor
     $('#vendor_id').select2({
         theme: 'bootstrap4',
         width: '100%',
@@ -278,7 +281,6 @@
         minimumInputLength: 1
     });
 
-    // --- DOM refs ---
     const csrf          = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
     const accBody       = document.getElementById('accessoriesBody');
     const searchBox     = document.getElementById('searchBox');
@@ -290,6 +292,8 @@
     const gTotalFoot    = document.getElementById('grandTotalFoot');
     const itemsCountBar = document.getElementById('itemsCountBar');
     const gTotalBar     = document.getElementById('grandTotalBar');
+
+    const payPercent    = document.getElementById('payPercent'); // ✅ NEW
     const payAmount     = document.getElementById('payAmount');
 
     // Pagination UI
@@ -306,16 +310,11 @@
     const m_sprice  = document.getElementById('m_sprice');
     const m_addBtn  = document.getElementById('modalAddBtn');
 
-    // --- State ---
-    let cart = []; // {accessory_id, accessory_name, qty_purchased, purchase_price, selling_price, purchase_date, description, barcode}
+    let cart = [];
     let currentAccessory = { id: null, name: '' };
 
-    // --- Helpers ---
     function fmt(n){ return (Math.round((+n + Number.EPSILON) * 100)/100).toFixed(2); }
-
-    function vendorChosen() {
-        return !!$('#vendor_id').val();
-    }
+    function vendorChosen(){ return !!$('#vendor_id').val(); }
 
     function enableAccessoriesUI(enabled) {
         accBody.classList.toggle('cursor-disabled', !enabled);
@@ -358,7 +357,6 @@
         recalc();
     }
 
-    // Strict number-required validator (empty NOT allowed; zero allowed)
     function parseRequiredNonNegativeNumber(inputEl, label) {
         const raw = (inputEl.value ?? '').trim();
         if (raw === '') throw new Error(`${label} is required.`);
@@ -368,17 +366,14 @@
         return num;
     }
 
-    // -------------------------
-    // Pagination + search logic
-    // -------------------------
-    const pageSize = 10; // adjust if you want 15/20
+    // Pagination + search
+    const pageSize = 10;
     let currentPage = 1;
     let allRows = Array.from(accBody.querySelectorAll('tr'));
     let filteredRows = [...allRows];
 
     function renderPaginationControls(totalItems) {
         paginationEl.innerHTML = '';
-
         const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
 
         const makeBtn = (label, page, disabled = false, active = false) => {
@@ -387,31 +382,25 @@
             b.className = `btn btn-outline-primary ${active ? 'active' : ''}`;
             b.textContent = label;
             b.disabled = disabled;
-            b.addEventListener('click', () => {
-                currentPage = page;
-                renderAccessoriesPage();
-            });
+            b.addEventListener('click', () => { currentPage = page; renderAccessoriesPage(); });
             return b;
         };
 
         paginationEl.appendChild(makeBtn('«', Math.max(1, currentPage - 1), currentPage === 1));
 
-        // Page numbers window
         const windowSize = 5;
-        let totalPagesCalc = totalPages;
         let start = Math.max(1, currentPage - Math.floor(windowSize / 2));
-        let end = Math.min(totalPagesCalc, start + windowSize - 1);
+        let end = Math.min(totalPages, start + windowSize - 1);
         start = Math.max(1, end - windowSize + 1);
 
         for (let p = start; p <= end; p++) {
             paginationEl.appendChild(makeBtn(String(p), p, false, p === currentPage));
         }
 
-        paginationEl.appendChild(makeBtn('»', Math.min(totalPagesCalc, currentPage + 1), currentPage === totalPagesCalc));
+        paginationEl.appendChild(makeBtn('»', Math.min(totalPages, currentPage + 1), currentPage === totalPages));
     }
 
     function renderAccessoriesPage() {
-        // hide all first
         allRows.forEach(tr => tr.style.display = 'none');
 
         const total = filteredRows.length;
@@ -421,9 +410,7 @@
         const startIdx = (currentPage - 1) * pageSize;
         const endIdx = Math.min(startIdx + pageSize, total);
 
-        for (let i = startIdx; i < endIdx; i++) {
-            filteredRows[i].style.display = '';
-        }
+        for (let i = startIdx; i < endIdx; i++) filteredRows[i].style.display = '';
 
         const from = total === 0 ? 0 : startIdx + 1;
         const to = endIdx;
@@ -443,56 +430,43 @@
         renderAccessoriesPage();
     }
 
-    // Init
     renderAccessoriesPage();
-
-    // Search filter
     searchBox.addEventListener('input', applyFilter);
 
-    // --- Vendor change handlers (Select2 safe) ---
     $('#vendor_id')
         .on('change', function () { enableAccessoriesUI(!!$(this).val()); renderAccessoriesPage(); })
         .on('select2:select', function () { enableAccessoriesUI(!!$(this).val()); renderAccessoriesPage(); })
         .on('select2:clear', function () { enableAccessoriesUI(false); renderAccessoriesPage(); });
 
-    enableAccessoriesUI( !!$('#vendor_id').val() );
+    enableAccessoriesUI(!!$('#vendor_id').val());
 
-    // --- Accessory: open modal on Select ---
+    // Open modal
     accBody.addEventListener('click', (e) => {
         if(!e.target.classList.contains('selectAccessory')) return;
-
-        if (!vendorChosen()) {
-            alert('Select a vendor first.');
-            return;
-        }
+        if (!vendorChosen()) { alert('Select a vendor first.'); return; }
 
         const tr = e.target.closest('tr');
         currentAccessory.id   = +tr.getAttribute('data-accessory-id');
         currentAccessory.name = tr.querySelector('td').textContent.trim();
 
-        // Reset modal fields
         modalName.textContent = currentAccessory.name;
         m_date.value   = "{{ now()->toDateString() }}";
         m_desc.value   = '';
         m_barcode.value= '';
         m_qty.value    = 1;
-        m_pprice.value = ''; // required
-        m_sprice.value = ''; // required
+        m_pprice.value = '';
+        m_sprice.value = '';
 
         $('#batchModal').modal('show');
     });
 
-    // Allow Enter key in modal to trigger Add
     [m_date, m_desc, m_barcode, m_qty, m_pprice, m_sprice].forEach(el => {
         el.addEventListener('keydown', (ev) => {
-            if (ev.key === 'Enter') {
-                ev.preventDefault();
-                m_addBtn.click();
-            }
+            if (ev.key === 'Enter') { ev.preventDefault(); m_addBtn.click(); }
         });
     });
 
-    // --- Modal Add → push to cart ---
+    // Add to cart
     m_addBtn.addEventListener('click', () => {
         try {
             const qty = (() => {
@@ -507,8 +481,6 @@
             if (!pdate) throw new Error('Purchase Date is required.');
 
             const desc = (m_desc.value ?? '').trim() || null;
-
-            // ✅ NEW: optional barcode per item
             const barcode = (m_barcode.value ?? '').trim() || null;
 
             cart.push({
@@ -529,7 +501,7 @@
         }
     });
 
-    // --- Remove selected line ---
+    // Remove line
     document.getElementById('selectedTable').addEventListener('click', (e) => {
         if(!e.target.classList.contains('removeRow')) return;
         const idx = +e.target.getAttribute('data-index');
@@ -537,7 +509,7 @@
         redraw();
     });
 
-    // --- Submit All ---
+    // Submit
     submitBtn.addEventListener('click', async () => {
         const vendorId = $('#vendor_id').val();
         if(!vendorId || cart.length === 0) return;
@@ -555,7 +527,11 @@
                 },
                 body: JSON.stringify({
                     vendor_id: vendorId,
+
+                    // ✅ send percentage + pay_amount
+                    pay_percentage: Number(payPercent.value || 0),
                     pay_amount: Number(payAmount.value || 0),
+
                     items: cart
                 })
             });
@@ -569,14 +545,14 @@
             }
             if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
 
-            // Reset UI
             cart = [];
+            payPercent.value = 0;
             payAmount.value = 0;
             redraw();
 
             $('#vendor_id').val(null).trigger('change');
             searchBox.value = '';
-            applyFilter(); // re-render pagination based on empty search
+            applyFilter();
 
             alert('Batches stored successfully.');
         } catch (err) {

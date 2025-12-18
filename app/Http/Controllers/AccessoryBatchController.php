@@ -258,102 +258,16 @@ public function store(Request $request)
 
   
 
-    // public function bulkStore(Request $request)
-    // {
-    //     $request->validate([
-    //         'vendor_id'               => 'required|exists:vendors,id',
-    //         'pay_amount'              => 'nullable|numeric|min:0',
-    //         'items'                   => 'required|array|min:1',
-    //         'items.*.accessory_id'    => 'required|exists:accessories,id',
-    //         'items.*.qty_purchased'   => 'required|integer|min:1',
-    //         'items.*.purchase_price'  => 'required|numeric|min:0',
-    //         'items.*.selling_price'   => 'required|numeric|min:0',
-    //         'items.*.purchase_date'   => 'required|date',
-    //         'items.*.description'     => 'nullable|string',
-    //     ]);
-
-    //     $vendorId   = (int) $request->vendor_id;
-    //     $userId     = auth()->id();
-    //     $items      = $request->items;
-    //     $payAmount  = (float) ($request->pay_amount ?? 0);
-
-    //     DB::beginTransaction();
-    //     try {
-    //         $totalCredit = 0;
-    //         $batchCodes  = [];
-
-    //         foreach ($items as $row) {
-    //             $data = [
-    //                 'accessory_id'   => (int) $row['accessory_id'],
-    //                 'vendor_id'      => $vendorId,
-    //                 'qty_purchased'  => (int) $row['qty_purchased'],
-    //                 'qty_remaining'  => (int) $row['qty_purchased'],
-    //                 'purchase_price' => (float) $row['purchase_price'],
-    //                 'selling_price'  => (float) $row['selling_price'],
-    //                 'purchase_date'  => $row['purchase_date'],
-    //                 'description'    => $row['description'] ?? null,
-    //                 'user_id'        => $userId,
-    //                 'barcode'        => (string) Str::uuid(), // temp
-    //             ];
-
-    //             /** @var AccessoryBatch $batch */
-    //             $batch = AccessoryBatch::create($data);
-    //             $batch->barcode = str_pad($batch->id, 5, '0', STR_PAD_LEFT);
-    //             $batch->save();
-
-    //             $lineTotal   = $data['qty_purchased'] * $data['purchase_price'];
-    //             $totalCredit += $lineTotal;
-    //             $batchCodes[] = $batch->barcode;
-
-    //             // Credit (you owe vendor for each batch)
-    //             Accounts::create([
-    //                 'vendor_id'   => $vendorId,
-    //                 'Credit'      => $lineTotal,
-    //                 'Debit'       => 0,
-    //                 'description' => "Batch Purchase: {$batch->barcode} ({$data['qty_purchased']} × {$data['purchase_price']})",
-    //                 'created_by'  => $userId,
-    //             ]);
-    //         }
-
-    //         // Single Debit for the combined payment (if any)
-    //         if ($payAmount > 0) {
-    //             Accounts::create([
-    //                 'vendor_id'   => $vendorId,
-    //                 'Credit'      => 0,
-    //                 'Debit'       => $payAmount,
-    //                 'description' => 'Payment for Batches: ' . implode(', ', $batchCodes),
-    //                 'created_by'  => $userId,
-    //             ]);
-    //         }
-
-    //         DB::commit();
-
-    //         return response()->json([
-    //             'status'  => 'ok',
-    //             'message' => 'Batches stored successfully',
-    //             'totals'  => [
-    //                 'credit' => $totalCredit,
-    //                 'debit'  => $payAmount,
-    //             ],
-    //         ]);
-    //     } catch (\Throwable $e) {
-    //         DB::rollBack();
-    //         report($e);
-
-    //         return response()->json([
-    //             'status'  => 'error',
-    //             'message' => 'Failed to store batches. Please try again.',
-    //         ], 500);
-    //     }
-    // }
-
-    public function bulkStore(Request $request)
+ public function bulkStore(Request $request)
 {
     $request->validate([
         'vendor_id'               => 'required|exists:vendors,id',
         'pay_amount'              => 'nullable|numeric|min:0',
-        'items'                   => 'required|array|min:1',
 
+        // Supplier discount % on GRAND TOTAL
+        'pay_percentage'          => 'nullable|numeric|min:0|max:100',
+
+        'items'                   => 'required|array|min:1',
         'items.*.accessory_id'    => 'required|exists:accessories,id',
         'items.*.qty_purchased'   => 'required|integer|min:1',
         'items.*.purchase_price'  => 'required|numeric|min:0',
@@ -361,25 +275,26 @@ public function store(Request $request)
         'items.*.purchase_date'   => 'required|date',
         'items.*.description'     => 'nullable|string',
 
-        // ✅ NEW: optional barcode per item
-        // distinct => no duplicates inside the same request
-        // unique   => must not exist in DB already
+        // Optional barcode
         'items.*.barcode'         => 'nullable|string|max:50|distinct|unique:accessory_batches,barcode',
     ]);
 
     $vendorId   = (int) $request->vendor_id;
     $userId     = auth()->id();
     $items      = $request->items;
+
     $payAmount  = (float) ($request->pay_amount ?? 0);
+    $percent    = (float) ($request->pay_percentage ?? 0);
 
     DB::beginTransaction();
+
     try {
-        $totalCredit = 0;
-        $batchCodes  = [];
+        $grandTotal = 0.0;
+        $batchCodes = [];
 
         foreach ($items as $row) {
 
-            $manualBarcode = isset($row['barcode']) ? trim((string)$row['barcode']) : '';
+            $manualBarcode = isset($row['barcode']) ? trim((string) $row['barcode']) : '';
             $manualBarcode = $manualBarcode !== '' ? $manualBarcode : null;
 
             $data = [
@@ -392,17 +307,13 @@ public function store(Request $request)
                 'purchase_date'  => $row['purchase_date'],
                 'description'    => $row['description'] ?? null,
                 'user_id'        => $userId,
-
-                // If manual provided -> set it now
-                // Else use temp UUID like your old code
                 'barcode'        => $manualBarcode ? $manualBarcode : (string) \Illuminate\Support\Str::uuid(),
             ];
 
             /** @var \App\Models\AccessoryBatch $batch */
             $batch = \App\Models\AccessoryBatch::create($data);
 
-            // If barcode not manual -> auto-generate like before (pad id),
-            // with a safety check in case someone manually used that code.
+            // If barcode not manual -> auto-generate padded id (same style as before)
             if (!$manualBarcode) {
                 $n = (int) $batch->id;
                 do {
@@ -417,11 +328,11 @@ public function store(Request $request)
                 $batch->save();
             }
 
-            $lineTotal   = $data['qty_purchased'] * $data['purchase_price'];
-            $totalCredit += $lineTotal;
+            $lineTotal  = (float) $data['qty_purchased'] * (float) $data['purchase_price'];
+            $grandTotal += $lineTotal;
             $batchCodes[] = $batch->barcode;
 
-            // Credit (you owe vendor for each batch) - unchanged
+            // Credit per batch (unchanged)
             \App\Models\Accounts::create([
                 'vendor_id'   => $vendorId,
                 'Credit'      => $lineTotal,
@@ -430,14 +341,36 @@ public function store(Request $request)
                 'created_by'  => $userId,
             ]);
         }
+sleep(1);
+        // ✅ Supplier discount on GRAND TOTAL
+        $discountAmount = 0.0;
+        if ($grandTotal > 0 && $percent > 0) {
+            $discountAmount = $grandTotal * ($percent / 100);
+        }
 
-        // Single Debit for the combined payment (if any) - unchanged
-        if ($payAmount > 0) {
+        // Net payable after discount
+        $netPayable = $grandTotal - $discountAmount;
+        if ($netPayable < 0) $netPayable = 0;
+
+        // ✅ Record DISCOUNT as a Debit entry (reduces payable, not cash)
+        if ($discountAmount > 0) {
             \App\Models\Accounts::create([
                 'vendor_id'   => $vendorId,
                 'Credit'      => 0,
-                'Debit'       => $payAmount,
-                'description' => 'Payment for Batches: ' . implode(', ', $batchCodes),
+                'Debit'       => $discountAmount,
+                'description' => "Supplier Discount {$percent}% on Batches: " . implode(', ', $batchCodes),
+                'created_by'  => $userId,
+            ]);
+        }
+
+        // ✅ Record PAYMENT as Debit (cash). Cap it so you don't overpay net payable.
+        $paymentDebit = min($payAmount, $netPayable);
+        if ($paymentDebit > 0) {
+            \App\Models\Accounts::create([
+                'vendor_id'   => $vendorId,
+                'Credit'      => 0,
+                'Debit'       => $paymentDebit,
+                'description' => "Payment for Batches: " . implode(', ', $batchCodes),
                 'created_by'  => $userId,
             ]);
         }
@@ -448,10 +381,13 @@ public function store(Request $request)
             'status'  => 'ok',
             'message' => 'Batches stored successfully',
             'totals'  => [
-                'credit' => $totalCredit,
-                'debit'  => $payAmount,
+                'grand_total' => $grandTotal,
+                'discount'    => $discountAmount,
+                'net_payable' => $netPayable,
+                'paid'        => $paymentDebit,
             ],
         ]);
+
     } catch (\Throwable $e) {
         DB::rollBack();
         report($e);
@@ -462,6 +398,124 @@ public function store(Request $request)
         ], 500);
     }
 }
+
+
+
+//     public function bulkStore(Request $request)
+// {
+//     $request->validate([
+//         'vendor_id'               => 'required|exists:vendors,id',
+//         'pay_amount'              => 'nullable|numeric|min:0',
+//         'items'                   => 'required|array|min:1',
+
+//         'items.*.accessory_id'    => 'required|exists:accessories,id',
+//         'items.*.qty_purchased'   => 'required|integer|min:1',
+//         'items.*.purchase_price'  => 'required|numeric|min:0',
+//         'items.*.selling_price'   => 'required|numeric|min:0',
+//         'items.*.purchase_date'   => 'required|date',
+//         'items.*.description'     => 'nullable|string',
+
+//         // ✅ NEW: optional barcode per item
+//         // distinct => no duplicates inside the same request
+//         // unique   => must not exist in DB already
+//         'items.*.barcode'         => 'nullable|string|max:50|distinct|unique:accessory_batches,barcode',
+//     ]);
+
+//     $vendorId   = (int) $request->vendor_id;
+//     $userId     = auth()->id();
+//     $items      = $request->items;
+//     $payAmount  = (float) ($request->pay_amount ?? 0);
+
+//     DB::beginTransaction();
+//     try {
+//         $totalCredit = 0;
+//         $batchCodes  = [];
+
+//         foreach ($items as $row) {
+
+//             $manualBarcode = isset($row['barcode']) ? trim((string)$row['barcode']) : '';
+//             $manualBarcode = $manualBarcode !== '' ? $manualBarcode : null;
+
+//             $data = [
+//                 'accessory_id'   => (int) $row['accessory_id'],
+//                 'vendor_id'      => $vendorId,
+//                 'qty_purchased'  => (int) $row['qty_purchased'],
+//                 'qty_remaining'  => (int) $row['qty_purchased'],
+//                 'purchase_price' => (float) $row['purchase_price'],
+//                 'selling_price'  => (float) $row['selling_price'],
+//                 'purchase_date'  => $row['purchase_date'],
+//                 'description'    => $row['description'] ?? null,
+//                 'user_id'        => $userId,
+
+//                 // If manual provided -> set it now
+//                 // Else use temp UUID like your old code
+//                 'barcode'        => $manualBarcode ? $manualBarcode : (string) \Illuminate\Support\Str::uuid(),
+//             ];
+
+//             /** @var \App\Models\AccessoryBatch $batch */
+//             $batch = \App\Models\AccessoryBatch::create($data);
+
+//             // If barcode not manual -> auto-generate like before (pad id),
+//             // with a safety check in case someone manually used that code.
+//             if (!$manualBarcode) {
+//                 $n = (int) $batch->id;
+//                 do {
+//                     $candidate = str_pad($n, 5, '0', STR_PAD_LEFT);
+//                     $exists = \App\Models\AccessoryBatch::where('barcode', $candidate)
+//                         ->where('id', '!=', $batch->id)
+//                         ->exists();
+//                     $n++;
+//                 } while ($exists);
+
+//                 $batch->barcode = $candidate;
+//                 $batch->save();
+//             }
+
+//             $lineTotal   = $data['qty_purchased'] * $data['purchase_price'];
+//             $totalCredit += $lineTotal;
+//             $batchCodes[] = $batch->barcode;
+
+//             // Credit (you owe vendor for each batch) - unchanged
+//             \App\Models\Accounts::create([
+//                 'vendor_id'   => $vendorId,
+//                 'Credit'      => $lineTotal,
+//                 'Debit'       => 0,
+//                 'description' => "Batch Purchase: {$batch->barcode} ({$data['qty_purchased']} × {$data['purchase_price']})",
+//                 'created_by'  => $userId,
+//             ]);
+//         }
+
+//         // Single Debit for the combined payment (if any) - unchanged
+//         if ($payAmount > 0) {
+//             \App\Models\Accounts::create([
+//                 'vendor_id'   => $vendorId,
+//                 'Credit'      => 0,
+//                 'Debit'       => $payAmount,
+//                 'description' => 'Payment for Batches: ' . implode(', ', $batchCodes),
+//                 'created_by'  => $userId,
+//             ]);
+//         }
+
+//         DB::commit();
+
+//         return response()->json([
+//             'status'  => 'ok',
+//             'message' => 'Batches stored successfully',
+//             'totals'  => [
+//                 'credit' => $totalCredit,
+//                 'debit'  => $payAmount,
+//             ],
+//         ]);
+//     } catch (\Throwable $e) {
+//         DB::rollBack();
+//         report($e);
+
+//         return response()->json([
+//             'status'  => 'error',
+//             'message' => 'Failed to store batches. Please try again.',
+//         ], 500);
+//     }
+// }
 
 
 
