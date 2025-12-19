@@ -119,28 +119,29 @@
     <div class="modal-dialog" role="document">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="exampleModalLabel">Edit Accessory</h5>
+                <h5 class="modal-title" id="exampleModalLabel">Edit BareCode</h5>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
             </div>
             <div class="modal-body">
-                <form class="form" id="editAccessory" action="{{ route('accessories.update') }}" method="post"
+                <form class="form" id="editAccessory" action="{{ route('batch.update') }}" method="post"
                     enctype="multipart/form-data">
                     @csrf
                     @method('PUT')
 
                     <div class="form-body">
                         <div class="mb-1">
-                            <label for="mobile_name" class="form-label">Accessory Name</label>
+                            {{-- <label for="mobile_name" class="form-label">Edit Barecode</label> --}}
                             <input class="form-control" type="hidden" name="id" id="id" value="Update">
-                            <input type="text" class="form-control" id="name" name="name" required>
+                            {{-- <input type="text" class="form-control" id="name" name="name" required> --}}
                         </div>
-
                         <div class="mb-1">
-                            <label for="description" class="form-label">Description</label>
-                            <input type="text" class="form-control" name="description" id="description">
+                            <label for="barcode" class="form-label">Barcode (Optional)</label>
+                            <input type="text" class="form-control" name="barcode" id="oldbarcode"
+                                placeholder="Enter barcode (leave empty to auto-generate)">
                         </div>
+                      
 
                         <div class="mb-1">
                             <label for="password" class="form-label">Edit Password</label>
@@ -501,6 +502,29 @@
     window.showBarcodeAjax = showBarcodeAjax;
     window.hideBarcodeModal = hideBarcodeModal;
     window.printBarcodeModal = printBarcodeModal;
+
+    function edit(value) {
+    console.log(value);
+    var id = value;
+    $.ajax({
+    type: "GET",
+    url: '/batchedit/' + id,
+    success: function (data) {
+    $("#editAccessory").trigger("reset");
+    console.log(data.result);
+    
+    $('#id').val(data.result.id);
+    $('#oldbarcode').val(data.result.barcode);
+    
+    
+    
+    
+    },
+    error: function (error) {
+    console.log('Error:', error);
+    }
+    });
+    }
 </script>
 
 @endsection

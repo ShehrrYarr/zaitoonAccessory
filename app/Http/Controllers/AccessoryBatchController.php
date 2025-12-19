@@ -517,7 +517,39 @@ sleep(1);
 //     }
 // }
 
+public function edit($id)
+    {
+        $filterId = AccessoryBatch::find($id);
+        // dd($filterId);
+        if (!$filterId) {
 
+            return response()->json(['message' => 'Id not found'], 404);
+        }
+
+        return response()->json(['result' => $filterId]);
+
+    }
+ public function update(Request $request)
+{ 
+    $password = $request->input('password');
+        $masterPassword = MasterPassword::first();
+
+    $accessory = \App\Models\AccessoryBatch::findOrFail($request->id);
+ if ($password === $masterPassword->update_password) {
+    $validated = $request->validate([
+        
+        'barcode' => 'nullable|string',
+      
+    ]);
+
+    $accessory->update($validated);
+
+    return redirect()->back()->with('success', 'Barcode Updated Successfully.');
+ }
+ else {
+    return redirect()->back()->with('danger', 'Incorrect update password.');
+ }
+}
 
   
 }
