@@ -1,6 +1,25 @@
 @extends('user_navbar')
 @section('content')
 
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<style>
+    /* Barcode Modal */
+    .barcode-modal {
+        display: none;
+        position: fixed;
+        top: 20%;
+        left: 50%;
+        transform: translate(-50%, 0);
+        background: #fff;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px #0003;
+        z-index: 9999;
+        min-width: 300px;
+    }
+</style>
+
 {{-- Store Modal --}}
 <div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
     aria-hidden="true">
@@ -18,7 +37,6 @@
                     @csrf
 
                     <div class="form-body">
-
                         <div class="mb-1">
                             <label for="accessory_id" class="form-label">Accessory</label>
                             <select class="form-control" name="accessory_id" id="accessorySelect1" required>
@@ -61,10 +79,12 @@
                             <input type="number" class="form-control" id="purchase_price" name="purchase_price"
                                 step="0.01" min="0" required>
                         </div>
+
                         <div class="mb-1">
                             <label for="selling_price" class="form-label">Selling Price (per unit)</label>
                             <input type="number" class="form-control" name="selling_price" step="0.01" min="0" required>
                         </div>
+
                         <div class="mb-1">
                             <label for="pay_amount" class="form-label">Pay amount</label>
                             <input type="number" id="pay_amount" class="form-control" name="pay_amount">
@@ -75,10 +95,8 @@
                             <input type="text" class="form-control" name="barcode" id="barcode"
                                 placeholder="Enter barcode (leave empty to auto-generate)" value="{{ old('barcode') }}">
                         </div>
-
-
-
                     </div>
+
                     <div class="form-actions">
                         <button type="button" class="btn btn-warning mr-1" data-dismiss="modal">
                             <i class="feather icon-x"></i> Cancel
@@ -96,7 +114,6 @@
 {{-- End Store Modal --}}
 
 {{-- Edit Modal --}}
-
 <div class="modal fade" id="exampleModal1" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
     aria-hidden="true">
     <div class="modal-dialog" role="document">
@@ -114,24 +131,23 @@
                     @method('PUT')
 
                     <div class="form-body">
-
                         <div class="mb-1">
                             <label for="mobile_name" class="form-label">Accessory Name</label>
                             <input class="form-control" type="hidden" name="id" id="id" value="Update">
                             <input type="text" class="form-control" id="name" name="name" required>
                         </div>
 
-
-
                         <div class="mb-1">
                             <label for="description" class="form-label">Description</label>
                             <input type="text" class="form-control" name="description" id="description">
                         </div>
+
                         <div class="mb-1">
                             <label for="password" class="form-label">Edit Password</label>
                             <input type="password" class="form-control" name="password" required>
                         </div>
                     </div>
+
                     <div class="form-actions">
                         <button type="button" class="btn btn-warning mr-1" data-dismiss="modal">
                             <i class="feather icon-x"></i> Cancel
@@ -146,12 +162,10 @@
         </div>
     </div>
 </div>
-
 {{-- End Edit Modal --}}
 
 {{-- Barcode Modal --}}
-<div id="barcode-modal" class="barcode-modal print-area"
-    style="display:none; position:fixed; top:20%; left:50%; transform:translate(-50%, 0); background:#fff; padding:30px; border-radius:8px; box-shadow:0 2px 8px #0003; z-index:9999; min-width:300px;">
+<div id="barcode-modal" class="barcode-modal print-area">
     <div id="barcode-modal-content"></div>
     <button class="btn btn-primary btn-sm" onclick="printBarcodeModal()">
         <i class="fa fa-print"></i> Print
@@ -161,16 +175,11 @@
     </button>
 </div>
 
-
-
-
-
-
 <div class="app-content content">
     <div class="content-overlay"></div>
     <div class="content-wrapper">
-        <div class="content-header row">
-        </div>
+        <div class="content-header row"></div>
+
         <div class="content-body">
             @if (session('success'))
             <div class="alert alert-success" id="successMessage">
@@ -183,39 +192,41 @@
                 {{ session('danger') }}
             </div>
             @endif
-          <div class="ml-1">
-            <form method="GET" action="{{ route('batches.index') }}" class="mb-3 d-flex align-items-center"
-                style="gap:8px; flex-wrap:wrap;">
-                <input type="date" class="form-control" name="start_date" value="{{ request('start_date') }}"
-                    style="max-width: 180px;">
-                <span class="mx-1">to</span>
-                <input type="date" class="form-control" name="end_date" value="{{ request('end_date') }}"
-                    style="max-width: 180px;">
-        
-                <select name="group_id" class="form-control" style="max-width: 220px;">
-                    <option value="">All Groups</option>
-                    @foreach($groups as $g)
-                    <option value="{{ $g->id }}" {{ (string)$g->id === request('group_id') ? 'selected' : '' }}>
-                        {{ $g->name }}
-                    </option>
-                    @endforeach
-                </select>
-        
-                <select name="company_id" class="form-control" style="max-width: 240px;">
-                    <option value="">All Companies</option>
-                    @foreach($companies as $c)
-                    <option value="{{ $c->id }}" {{ (string)$c->id === request('company_id') ? 'selected' : '' }}>
-                        {{ $c->name }}
-                    </option>
-                    @endforeach
-                </select>
-        
-                <button type="submit" class="btn btn-primary mx-1">Filter</button>
-                <a href="{{ route('batches.index') }}" class="btn btn-secondary mx-1">Reset</a>
-            </form>
-        </div>
+
             <div class="ml-1">
-                <h2>Total Purchase Amount: {{$totalPurchasePrice}}</h2>
+                <form method="GET" action="{{ route('batches.index') }}" class="mb-3 d-flex align-items-center"
+                    style="gap:8px; flex-wrap:wrap;">
+                    <input type="date" class="form-control" name="start_date" value="{{ request('start_date') }}"
+                        style="max-width: 180px;">
+                    <span class="mx-1">to</span>
+                    <input type="date" class="form-control" name="end_date" value="{{ request('end_date') }}"
+                        style="max-width: 180px;">
+
+                    <select name="group_id" class="form-control" style="max-width: 220px;">
+                        <option value="">All Groups</option>
+                        @foreach($groups as $g)
+                        <option value="{{ $g->id }}" {{ (string)$g->id === request('group_id') ? 'selected' : '' }}>
+                            {{ $g->name }}
+                        </option>
+                        @endforeach
+                    </select>
+
+                    <select name="company_id" class="form-control" style="max-width: 240px;">
+                        <option value="">All Companies</option>
+                        @foreach($companies as $c)
+                        <option value="{{ $c->id }}" {{ (string)$c->id === request('company_id') ? 'selected' : '' }}>
+                            {{ $c->name }}
+                        </option>
+                        @endforeach
+                    </select>
+
+                    <button type="submit" class="btn btn-primary mx-1">Filter</button>
+                    <a href="{{ route('batches.index') }}" class="btn btn-secondary mx-1">Reset</a>
+                </form>
+            </div>
+
+            <div class="ml-1">
+                <h2>Total Purchase Amount: {{ $totalPurchasePrice }}</h2>
             </div>
 
             <button type="button" class="btn btn-primary ml-1" data-toggle="modal" data-target="#exampleModal">
@@ -229,15 +240,14 @@
                 <div class="card ">
                     <div class="card-header latest-update-heading d-flex justify-content-between">
                         <h4 class="latest-update-heading-title text-bold-500">Accessories</h4>
-
                     </div>
+
                     <div class="table-responsive">
                         <table id="accessoryTable" class="table table-striped table-bordered zero-configuration">
                             <thead>
                                 <tr>
                                     <th>Created At</th>
                                     <th>Created By</th>
-
                                     <th>Accessory</th>
                                     <th>Group</th>
                                     <th>Company</th>
@@ -251,7 +261,6 @@
                                     <th>Barcode</th>
                                     <th>Print Barcode</th>
                                     <th>Actions</th>
-
                                 </tr>
                             </thead>
                             <tbody>
@@ -276,166 +285,167 @@
                                             <i class="fa fa-barcode"></i> View Barcode
                                         </button>
                                     </td>
-                                    <td><a href="" onclick="edit({{ $batch->id }})" data-toggle="modal"
+                                    <td>
+                                        <a href="" onclick="edit({{ $batch->id }})" data-toggle="modal"
                                             data-target="#exampleModal1">
-                                            <i class="feather icon-edit"></i></a>
+                                            <i class="feather icon-edit"></i>
+                                        </a>
                                     </td>
                                 </tr>
                                 @endforeach
                             </tbody>
                         </table>
                     </div>
+
                 </div>
             </div>
-
 
         </div>
     </div>
 </div>
 
-
-
 <script>
+    // Submit button loading state
     $(document).ready(function() {
-    $('#storeMobile').on('submit', function() {
-    // Change button text to "Saving..."
-    $('#storeButton').html('<i class="fa fa-spinner fa-spin"></i> Saving...').prop('disabled', true);
+        $('#storeMobile').on('submit', function() {
+            $('#storeButton').html('<i class="fa fa-spinner fa-spin"></i> Saving...').prop('disabled', true);
+        });
     });
-    });
 
-  // ===== Qty × Purchase Price => Pay Amount (single add modal) =====
-  const qtyInput = document.getElementById('qty_purchased');
-  const priceInput = document.getElementById('purchase_price');
-  const payAmountInput = document.getElementById('pay_amount');
+    // Qty x purchase => pay amount auto fill
+    const qtyInput = document.getElementById('qty_purchased');
+    const priceInput = document.getElementById('purchase_price');
+    const payAmountInput = document.getElementById('pay_amount');
 
-  function calculatePayAmount() {
-    const qty   = Number(qtyInput?.value || 0);
-    const price = Number(priceInput?.value || 0);
-    const total = qty * price;
-    if (!isFinite(total)) return;
-    payAmountInput.value = total.toFixed(2);
-  }
-
-  if (qtyInput && priceInput && payAmountInput) {
-    qtyInput.addEventListener('input', calculatePayAmount);
-    priceInput.addEventListener('input', calculatePayAmount);
-  }
-
-  // ===== DataTable (batches list) =====
-  $(document).ready(function () {
-    $('#accessoryTable').DataTable({ order: [[0, 'desc']] });
-  });
-
-  // ===== Select2 for Add Batch modal selects =====
-  $(document).ready(function () {
-    $('#vendorSelect1').select2({
-      placeholder: "Select a vendor",
-      allowClear: true,
-      width: '100%'
-    });
-    $('#accessorySelect1').select2({
-      placeholder: "Select an Accessory",
-      allowClear: true,
-      width: '100%'
-    });
-  });
-
-  // ===== Barcode Modal helpers =====
-  function hideBarcodeModal() {
-    document.getElementById('barcode-modal').style.display = 'none';
-  }
-
-  // Build modal content safely (no raw innerHTML with untrusted strings)
-  async function showBarcodeAjax(batchId) {
-    try {
-      const res = await fetch(`/batches/${batchId}/barcode`, { headers: { 'Accept': 'application/json' }});
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Failed to fetch barcode info');
-      }
-
-      // Expect data.batch like:
-      // { barcode, accessory, vendor, qty_purchased, qty_remaining, purchase_price, selling_price, purchase_date }
-      const batch = data.batch || {};
-      // Accessory name might be in "accessory" or "accessory_name" depending on your API
-      const accessoryName = (batch.accessory ?? batch.accessory_name ?? '').toString();
-
-      const c = document.getElementById('barcode-modal-content');
-      c.textContent = ''; // clear
-
-      const h = document.createElement('h4');
-      h.textContent = `Batch Barcode (${batch.barcode ?? ''})`;
-
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('id', 'barcode-svg');
-
-      const fields = [
-        ['Accessory', accessoryName],
-        ['Vendor', batch.vendor ?? ''],
-        ['Qty Purchased', batch.qty_purchased ?? ''],
-        ['Qty Remaining', batch.qty_remaining ?? ''],
-        ['Purchase Price', batch.purchase_price ?? ''],
-        ['Purchase Date', batch.purchase_date ?? ''],
-      ];
-
-      c.appendChild(h);
-      c.appendChild(svg);
-      for (const [label, value] of fields) {
-        const p = document.createElement('p');
-        const strong = document.createElement('strong');
-        strong.textContent = `${label}: `;
-        p.appendChild(strong);
-        p.appendChild(document.createTextNode(String(value)));
-        c.appendChild(p);
-      }
-
-      // Save values for printing
-      const modalEl = document.getElementById('barcode-modal');
-      modalEl.dataset.batchBarcode = String(batch.barcode ?? '');
-      modalEl.dataset.accessoryName = accessoryName;
-
-      // Show modal
-      document.getElementById('barcode-modal').style.display = 'block';
-
-      // Render barcode
-      JsBarcode("#barcode-svg", String(batch.barcode ?? ''), {
-        format: "CODE128",
-        lineColor: "#000",
-        width: 2,
-        height: 40,
-        displayValue: false
-      });
-
-    } catch (err) {
-      console.error(err);
-      alert(err.message || 'Could not fetch barcode info!');
-    }
-  }
-
-  // Print: Barcode + Batch Number + Accessory Name (no price)
-  function printBarcodeModal(labelCount = 1) {
-    const modalEl = document.getElementById('barcode-modal');
-    let batchNumber   = modalEl?.dataset?.batchBarcode || '';
-    let accessoryName = modalEl?.dataset?.accessoryName || '';
-
-    // Fallback: read from modal text if dataset missing
-    if (!accessoryName) {
-      const p = Array.from(document.querySelectorAll('#barcode-modal-content p'))
-        .find(el => el.textContent.trim().startsWith('Accessory:'));
-      if (p) accessoryName = p.textContent.replace(/^Accessory:\s*/i, '').trim();
+    function calculatePayAmount() {
+        const qty = Number(qtyInput?.value || 0);
+        const price = Number(priceInput?.value || 0);
+        const total = qty * price;
+        if (!isFinite(total)) return;
+        payAmountInput.value = total.toFixed(2);
     }
 
-    const esc = (s) => String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+    if (qtyInput && priceInput && payAmountInput) {
+        qtyInput.addEventListener('input', calculatePayAmount);
+        priceInput.addEventListener('input', calculatePayAmount);
+    }
 
-    const safeBatch = esc(batchNumber);
-    const safeName  = esc(accessoryName);
+    // DataTable
+    $(document).ready(function () {
+        $('#accessoryTable').DataTable({ order: [[0, 'desc']] });
+    });
 
-    const win = window.open('', '', 'width=900,height=700');
-    win.document.write(`
+    // Select2 in modal
+    $(document).ready(function () {
+        $('#vendorSelect1').select2({
+            placeholder: "Select a vendor",
+            allowClear: true,
+            width: '100%'
+        });
+        $('#accessorySelect1').select2({
+            placeholder: "Select an Accessory",
+            allowClear: true,
+            width: '100%'
+        });
+    });
+
+    // Hide barcode modal
+    function hideBarcodeModal() {
+        document.getElementById('barcode-modal').style.display = 'none';
+    }
+
+    // Fetch barcode details and show modal
+    async function showBarcodeAjax(batchId) {
+        try {
+            const res = await fetch(`/batches/${batchId}/barcode`, { headers: { 'Accept': 'application/json' }});
+            const data = await res.json();
+
+            if (!res.ok || !data.success) {
+                throw new Error(data.message || 'Failed to fetch barcode info');
+            }
+
+            const batch = data.batch || {};
+            const accessoryName = (batch.accessory ?? batch.accessory_name ?? '').toString();
+
+            const c = document.getElementById('barcode-modal-content');
+            c.textContent = '';
+
+            const h = document.createElement('h4');
+            h.textContent = `Batch Barcode (${batch.barcode ?? ''})`;
+
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('id', 'barcode-svg');
+
+            const fields = [
+                ['Accessory', accessoryName],
+                ['Selling Price', batch.selling_price ?? ''],
+                ['Vendor', batch.vendor ?? ''],
+                ['Qty Purchased', batch.qty_purchased ?? ''],
+                ['Qty Remaining', batch.qty_remaining ?? ''],
+                ['Purchase Price', batch.purchase_price ?? ''],
+                ['Purchase Date', batch.purchase_date ?? ''],
+            ];
+
+            c.appendChild(h);
+            c.appendChild(svg);
+            for (const [label, value] of fields) {
+                const p = document.createElement('p');
+                const strong = document.createElement('strong');
+                strong.textContent = `${label}: `;
+                p.appendChild(strong);
+                p.appendChild(document.createTextNode(String(value)));
+                c.appendChild(p);
+            }
+
+            const modalEl = document.getElementById('barcode-modal');
+            modalEl.dataset.batchBarcode  = String(batch.barcode ?? '');
+            modalEl.dataset.accessoryName = accessoryName;
+            modalEl.dataset.sellingPrice  = String(batch.selling_price ?? '');
+
+            document.getElementById('barcode-modal').style.display = 'block';
+
+            JsBarcode("#barcode-svg", String(batch.barcode ?? ''), {
+                format: "CODE128",
+                lineColor: "#000",
+                width: 2,
+                height: 40,
+                displayValue: false
+            });
+
+        } catch (err) {
+            console.error(err);
+            alert(err.message || 'Could not fetch barcode info!');
+        }
+    }
+
+    // Print sticker (Barcode + Batch# + Selling Price + Accessory Name)
+    function printBarcodeModal(labelCount = 1) {
+        const modalEl = document.getElementById('barcode-modal');
+
+        let batchNumber   = modalEl?.dataset?.batchBarcode || '';
+        let accessoryName = modalEl?.dataset?.accessoryName || '';
+        let sellingPrice  = modalEl?.dataset?.sellingPrice || '';
+
+        // Format price
+        let priceText = '';
+        const p = Number(sellingPrice);
+        if (sellingPrice !== '' && !Number.isNaN(p)) {
+            priceText = 'Rs. ' + p.toFixed(2);
+        } else if (sellingPrice) {
+            priceText = 'Rs. ' + sellingPrice;
+        }
+
+        const esc = (s) => String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        const safeBatch = esc(batchNumber);
+        const safeName  = esc(accessoryName);
+        const safePrice = esc(priceText);
+
+        const win = window.open('', '', 'width=900,height=700');
+        win.document.write(`
 <!DOCTYPE html>
 <html>
 <head>
@@ -450,8 +460,9 @@
       display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
     }
     .barcode-box svg { width: 120px !important; height: 45px !important; display:block; }
-    .barcode-label { font-size: 4.5mm; font-weight: 600; margin-top: 1mm; }   /* batch number */
-    .barcode-name  { font-size: 3.6mm; font-weight: 500; margin-top: 1mm; line-height: 1.05; max-width: 46mm;
+    .barcode-label { font-size: 4.5mm; font-weight: 700; margin-top: 0.8mm; }
+    .barcode-price { font-size: 3.6mm; font-weight: 700; margin-top: 0.6mm; }
+    .barcode-name  { font-size: 3.6mm; font-weight: 500; margin-top: 0.6mm; line-height: 1.05; max-width: 46mm;
                      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   </style>
 </head>
@@ -460,6 +471,7 @@
     <div class="barcode-box">
       <svg id="barcode_${i}"></svg>
       <div class="barcode-label">${safeBatch}</div>
+      <div class="barcode-price">${safePrice}</div>
       <div class="barcode-name">${safeName}</div>
     </div>
   `).join('')}
@@ -478,18 +490,17 @@
   <\/script>
 </body>
 </html>`);
-    win.document.close();
-  }
+        win.document.close();
+    }
 
-  // ===== Optional: auto-hide flash messages =====
-  setTimeout(() => document.getElementById('successMessage')?.remove(), 4000);
-  setTimeout(() => document.getElementById('dangerMessage')?.remove(), 6000);
+    // Auto hide alerts
+    setTimeout(() => document.getElementById('successMessage')?.remove(), 4000);
+    setTimeout(() => document.getElementById('dangerMessage')?.remove(), 6000);
 
-  // Expose functions used by buttons
-  window.showBarcodeAjax = showBarcodeAjax;
-  window.hideBarcodeModal = hideBarcodeModal;
-  window.printBarcodeModal = printBarcodeModal;
+    // Expose
+    window.showBarcodeAjax = showBarcodeAjax;
+    window.hideBarcodeModal = hideBarcodeModal;
+    window.printBarcodeModal = printBarcodeModal;
 </script>
-
 
 @endsection
