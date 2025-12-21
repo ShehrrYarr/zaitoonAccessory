@@ -135,7 +135,7 @@ Route::put('/accessories', [AccessoryController::class, 'update'])->name('access
 // Route::get('/filteraccessories', [App\Http\Controllers\AccessoryController::class, 'filter'])->name('filteraccessories');
 Route::get('/filteraccessory',[AccessoryController::class,'filter'])->name('filter.index');
 Route::get('/batchedit/{id}', [AccessoryBatchController::class, 'edit'])->name('accessories.edit');
-Route::put('/accessories', [AccessoryBatchController::class, 'update'])->name('batch.update');
+Route::put('/batches', [AccessoryBatchController::class, 'update'])->name('batch.update');
 
 //Batch Routes
 Route::get('/batches', [AccessoryBatchController::class, 'index'])->name('batches.index');
