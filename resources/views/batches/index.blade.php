@@ -472,7 +472,7 @@
     <div class="barcode-box">
       <svg id="barcode_${i}"></svg>
       <div class="barcode-label">${safeBatch}</div>
-      <div class="barcode-price">${safePrice}</div>
+    
       <div class="barcode-name">${safeName}</div>
     </div>
   `).join('')}
@@ -493,6 +493,8 @@
 </html>`);
         win.document.close();
     }
+
+    // <div class="barcode-price">${safePrice}</div>
 
     // Auto hide alerts
     setTimeout(() => document.getElementById('successMessage')?.remove(), 4000);
