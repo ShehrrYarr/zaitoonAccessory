@@ -144,6 +144,9 @@ Route::get('/batches/{id}/barcode', [AccessoryBatchController::class, 'barcodeIn
 
 Route::post('/deletebatch', [AccessoryBatchController::class, 'deleteBatch'])->name('deletebatch');
 
+Route::get('/batches/live', [AccessoryBatchController::class, 'liveIndex'])->name('batches.live');
+Route::get('/batches/live/feed', [AccessoryBatchController::class, 'liveFeed'])->name('batches.live.feed');
+
 //Sales Routes
 Route::get('/sales', [App\Http\Controllers\SaleController::class, 'index'])->name('sales.index');
 Route::get('/sales/create', [App\Http\Controllers\SaleController::class, 'create'])->name('sales.create');

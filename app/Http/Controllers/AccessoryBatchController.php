@@ -13,6 +13,7 @@ use App\Models\Accessory;
 use App\Models\Accounts;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 
 
@@ -572,6 +573,118 @@ public function edit($id)
 
         return redirect()->back()->with('success', 'Batch deleted successfully!');
     }
+
+    public function liveIndex(Request $request)
+    {
+        $today = Carbon::today();
+        $start = $request->query('start_date', $today->format('Y-m-d'));
+        $end   = $request->query('end_date',   $today->format('Y-m-d'));
+    $vendorId  = $request->query('vendor_id');
+    $groupId   = $request->query('group_id');
+    $companyId = $request->query('company_id');
+
+    $vendors   = vendor::orderBy('name')->get(['id','name']);
+    $groups    = group::orderBy('name')->get(['id','name']);
+    $companies = company::orderBy('name')->get(['id','name']);
+
+    return view('batches.live', compact(
+        'vendors','groups','companies','start','end','vendorId','groupId','companyId'
+    ));
+}
+
+public function liveFeed(Request $request)
+{
+    $request->validate([
+        'start_date' => 'required|date_format:Y-m-d',
+        'end_date'   => 'required|date_format:Y-m-d|after_or_equal:start_date',
+        'vendor_id'  => 'nullable|exists:vendors,id',
+        'group_id'   => 'nullable|exists:groups,id',
+        'company_id' => 'nullable|exists:companies,id',
+    ]);
+
+    $start = Carbon::createFromFormat('Y-m-d H:i:s', $request->start_date.' 00:00:00');
+    $end   = Carbon::createFromFormat('Y-m-d H:i:s', $request->end_date.' 23:59:59');
+
+    $query = AccessoryBatch::with([
+            'accessory:id,name,group_id,company_id',
+            'accessory.group:id,name',
+            'accessory.company:id,name',
+            'vendor:id,name',
+            'user:id,name',
+        ])
+        ->whereBetween('created_at', [$start, $end]);
+
+    if ($request->filled('vendor_id')) {
+        $query->where('vendor_id', $request->vendor_id);
+    }
+
+    if ($request->filled('group_id')) {
+        $gid = (int) $request->group_id;
+        $query->whereHas('accessory', fn($q) => $q->where('group_id', $gid));
+    }
+
+    if ($request->filled('company_id')) {
+        $cid = (int) $request->company_id;
+        $query->whereHas('accessory', fn($q) => $q->where('company_id', $cid));
+    }
+
+    $batches = $query->orderByDesc('created_at')->limit(300)->get();
+
+    if ($batches->isEmpty()) {
+        return response()->json([
+            'success'      => true,
+            'data'         => [],
+            'totals'       => [
+                'count' => 0,
+                'qty_sum' => 0,
+                'purchase_sum' => 0.00,
+                'remaining_sum' => 0,
+            ],
+            'refreshed_at' => now()->format('H:i:s'),
+        ]);
+    }
+
+    $rows = $batches->map(function ($b) {
+        $qty = (int) ($b->qty_purchased ?? 0);
+        $pp  = (float) ($b->purchase_price ?? 0);
+        $lineTotal = $qty * $pp;
+
+        return [
+            'id'            => $b->id,
+            'created_at'    => optional($b->created_at)->format('Y-m-d H:i'),
+            'purchase_date' => $b->purchase_date ? Carbon::parse($b->purchase_date)->format('Y-m-d') : null,
+
+            'accessory'     => optional($b->accessory)->name,
+            'group'         => optional(optional($b->accessory)->group)->name,
+            'company'       => optional(optional($b->accessory)->company)->name,
+            'vendor'        => optional($b->vendor)->name,
+            'user'          => optional($b->user)->name,
+
+            'qty_purchased' => $qty,
+            'qty_remaining' => (int) ($b->qty_remaining ?? 0),
+            'purchase_price'=> round($pp, 2),
+            'selling_price' => round((float)($b->selling_price ?? 0), 2),
+            'line_total'    => round($lineTotal, 2),
+
+            'barcode'       => $b->barcode,
+            'description'   => $b->description,
+        ];
+    });
+
+    $totals = [
+        'count'         => $rows->count(),
+        'qty_sum'       => (int) $rows->sum('qty_purchased'),
+        'remaining_sum' => (int) $rows->sum('qty_remaining'),
+        'purchase_sum'  => round($rows->sum('line_total'), 2),
+    ];
+
+    return response()->json([
+        'success'      => true,
+        'data'         => $rows,
+        'totals'       => $totals,
+        'refreshed_at' => now()->format('H:i:s'),
+    ]);
+}
 
   
 }

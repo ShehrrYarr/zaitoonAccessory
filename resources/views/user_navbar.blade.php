@@ -205,6 +205,10 @@
                                                                 class="menu-item" href="/batches"
                                                                 data-i18n="1 columns">Manage Batch</a>
                                                 </li>
+                                                <li class="@if (\Request::is('/batches/live')) active @endif"><a
+                                                                class="menu-item" href="/batches/live"
+                                                                data-i18n="1 columns">Live Purchase</a>
+                                                </li>
 
 
                                         </ul>
