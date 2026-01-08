@@ -142,6 +142,7 @@ Route::get('/batches', [AccessoryBatchController::class, 'index'])->name('batche
 Route::post('/batches', [AccessoryBatchController::class, 'store'])->name('batches.store');
 Route::get('/batches/{id}/barcode', [AccessoryBatchController::class, 'barcodeInfo'])->name('batches.barcode');
 
+Route::post('/deletebatch', [AccessoryBatchController::class, 'deleteBatch'])->name('deletebatch');
 
 //Sales Routes
 Route::get('/sales', [App\Http\Controllers\SaleController::class, 'index'])->name('sales.index');

@@ -552,5 +552,26 @@ public function edit($id)
 }
 
 
+ public function deleteBatch(Request $request)
+    {
+        $account = AccessoryBatch::findOrFail($request->id);
+
+        $password = $request->input('password');
+        $masterPassword = MasterPassword::first();
+
+        // Check against delete_password
+        if ($password === $masterPassword->delete_password) {
+            $account->delete();
+
+            return redirect()->back()->with('success', 'Batch deleted successfully.');
+        } else {
+            return redirect()->back()->with('danger', 'Incorrect delete password.');
+        }
+
+        // Delete the vendor record
+
+        return redirect()->back()->with('success', 'Batch deleted successfully!');
+    }
+
   
 }

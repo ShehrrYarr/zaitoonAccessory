@@ -20,6 +20,52 @@
     }
 </style>
 
+{{-- Delete Account --}}
+<div class="modal fade" id="exampleModal2" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exampleModalLabel">Delete Batch?</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form class="form" id="deleteMobile" action="{{ route('deletebatch') }}" method="post"
+                    enctype="multipart/form-data">
+                    @csrf
+                    <div class="form-body">
+
+                        <div class="mb-1">
+                            <label for="name" class="form-label">Are you sure you want to delete this Entry?</label>
+                            <input class="form-control"  name="id" id="did" value="">
+                            {{-- <input type="text" class="form-control" id="dname" name="name" readonly required> --}}
+                        </div>
+
+                        <div class="mb-1">
+                            <label for="name" class="form-label">Enter Password to Delete This Batch</label>
+                            <input type="password" class="form-control" name="password">
+                        </div>
+                       
+
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-warning mr-1" data-dismiss="modal">
+                            <i class="feather icon-x"></i> No
+                        </button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fa fa-check-square-o"></i> Yes
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+    </div>
+</div>
+{{-- End Delete Account --}}
+
 {{-- Store Modal --}}
 <div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
     aria-hidden="true">
@@ -289,7 +335,10 @@
                                     <td>
                                         <a href="" onclick="edit({{ $batch->id }})" data-toggle="modal"
                                             data-target="#exampleModal1">
-                                            <i class="feather icon-edit"></i>
+                                            <i class="feather icon-edit"></i> |
+                                            <a href="#" onclick="remove({{ $batch->id }})" data-toggle="modal" data-target="#exampleModal2">
+                                                <i style="color:red" class="feather icon-trash"></i>
+                                            </a>
                                         </a>
                                     </td>
                                 </tr>
@@ -520,6 +569,25 @@
     
     
     
+    
+    },
+    error: function (error) {
+    console.log('Error:', error);
+    }
+    });
+    }
+
+    function remove(value) {
+    console.log(value);
+    var id = value;
+    $.ajax({
+    type: "GET",
+    url: '/batchedit/' + id,
+    success: function (data) {
+    $("#deleteMobile").trigger("reset");
+    
+    $('#did').val(data.result.id);
+    // $('#dname').val(data.result.name);
     
     },
     error: function (error) {
