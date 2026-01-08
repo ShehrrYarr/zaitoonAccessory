@@ -39,7 +39,7 @@
 
                         <div class="mb-1">
                             <label for="name" class="form-label">Are you sure you want to delete this Entry?</label>
-                            <input class="form-control"  name="id" id="did" value="">
+                            <input class="form-control" hidden    name="id" id="did" value="">
                             {{-- <input type="text" class="form-control" id="dname" name="name" readonly required> --}}
                         </div>
 
