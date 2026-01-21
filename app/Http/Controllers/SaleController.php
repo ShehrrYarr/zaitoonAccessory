@@ -239,6 +239,9 @@ public function salesReport(Request $request)
 
 
 
+
+
+
 // public function checkout(Request $request)
 // {
 //     $data = $request->validate([
@@ -250,9 +253,11 @@ public function salesReport(Request $request)
 //         'items.*.qty'       => 'required|integer|min:1',
 //         'items.*.price'     => 'required|numeric|min:0',
 //         'items.*.accessory' => 'nullable|string',
-//         'cart_discount'     => 'nullable|numeric|min:0',
 
-//         // NEW: comment on sale
+//         // Discount amount OR Discount percent
+//         'cart_discount'            => 'nullable|numeric|min:0',
+//         'cart_discount_percent'    => 'nullable|numeric|min:0|max:100',
+
 //         'comment'           => 'nullable|string|max:1000',
 
 //         // legacy single-payment hints (fallback if payments[] missing)
@@ -269,6 +274,17 @@ public function salesReport(Request $request)
 //         'payments.*.reference_no' => 'nullable|string|max:255',
 //     ]);
 
+//     // ✅ backend check: only one discount type allowed
+//     $discAmountIn  = (float) ($data['cart_discount'] ?? 0);
+//     $discPercentIn = (float) ($data['cart_discount_percent'] ?? 0);
+
+//     if ($discAmountIn > 0 && $discPercentIn > 0) {
+//         return response()->json([
+//             'success' => false,
+//             'message' => 'Use only ONE discount: either Discount Amount OR Discount %. Not both.'
+//         ], 422);
+//     }
+
 //     // Walk-in normalization
 //     $customerName   = $data['customer_name']   ?? null;
 //     $customerMobile = $data['customer_mobile'] ?? null;
@@ -284,7 +300,7 @@ public function salesReport(Request $request)
 //     }
 
 //     try {
-//         $sale = \DB::transaction(function () use ($data, $customerName, $customerMobile, $request) {
+//         $sale = \DB::transaction(function () use ($data, $customerName, $customerMobile, $request, $discAmountIn, $discPercentIn) {
 
 //             // 1) Create Sale
 //             $sale = \App\Models\Sale::create([
@@ -299,12 +315,12 @@ public function salesReport(Request $request)
 //                 'status'          => 'pending',
 //                 'approved_at'     => null,
 //                 'approved_by'     => null,
-//                 // NEW: persist comment
 //                 'comment'         => $data['comment'] ?? null,
 //             ]);
 
 //             // 2) Items & stock
 //             $gross = 0.0;
+
 //             foreach ($data['items'] as $item) {
 //                 $batch = \App\Models\AccessoryBatch::where('barcode', $item['barcode'])
 //                     ->lockForUpdate()
@@ -313,11 +329,11 @@ public function salesReport(Request $request)
 //                 if (!$batch) throw new \Exception('Batch not found for barcode ' . $item['barcode']);
 //                 if ($batch->qty_remaining < $item['qty']) {
 //                     throw new \Exception('Insufficient stock for batch ' . $item['barcode'] .
-//                                          '. Remaining: ' . $batch->qty_remaining);
+//                         '. Remaining: ' . $batch->qty_remaining);
 //                 }
 
 //                 $qty       = (int) $item['qty'];
-//                 $unitPrice = (float) $item['price']; // or (float)$batch->selling_price
+//                 $unitPrice = (float) $item['price'];
 //                 $line      = $unitPrice * $qty;
 //                 $gross    += $line;
 
@@ -334,16 +350,25 @@ public function salesReport(Request $request)
 //                 $batch->decrement('qty_remaining', $qty);
 //             }
 
-//             // 3) Totals
-//             $discount = max(0.0, (float) ($data['cart_discount'] ?? 0));
+//             // 3) Totals (✅ support amount OR percent)
+//             $discount = 0.0;
+
+//             if ($discPercentIn > 0) {
+//                 $discount = $gross * ($discPercentIn / 100);
+//             } else {
+//                 $discount = $discAmountIn;
+//             }
+
+//             if ($discount < 0) $discount = 0;
 //             if ($discount > $gross) $discount = $gross;
+
 //             $net = $gross - $discount;
 
 //             $sale->total_amount    = $net;
 //             $sale->discount_amount = $discount;
 //             $sale->save();
 
-//             // 4) Payments for BOTH flows
+//             // 4) Payments logic (UNCHANGED)
 //             $paymentsInput = $request->input('payments', []);
 //             $hasPayments   = is_array($paymentsInput) && count($paymentsInput) > 0;
 
@@ -402,7 +427,6 @@ public function salesReport(Request $request)
 //                         $totalPaid += $use;
 //                     }
 //                 } else {
-//                     // Legacy single payment hint
 //                     $legacyPay = max(0.0, (float) ($data['pay_amount'] ?? 0));
 //                     $legacyPay = min($legacyPay, (float)$sale->total_amount);
 
@@ -446,7 +470,7 @@ public function salesReport(Request $request)
 //                 $sale->save();
 
 //             } else {
-//                 // Walk-in: MUST record a full payment; if none provided, synthesize one
+//                 // Walk-in: MUST record full payment
 //                 if ($hasPayments) {
 //                     $soFar = 0.0;
 //                     foreach ($paymentsInput as $p) {
@@ -503,8 +527,6 @@ public function salesReport(Request $request)
 //     }
 // }
 
-
-
 public function checkout(Request $request)
 {
     $data = $request->validate([
@@ -517,9 +539,12 @@ public function checkout(Request $request)
         'items.*.price'     => 'required|numeric|min:0',
         'items.*.accessory' => 'nullable|string',
 
+        // ✅ toggle
+        'use_cost_price'    => 'nullable|boolean',
+
         // Discount amount OR Discount percent
-        'cart_discount'            => 'nullable|numeric|min:0',
-        'cart_discount_percent'    => 'nullable|numeric|min:0|max:100',
+        'cart_discount'         => 'nullable|numeric|min:0',
+        'cart_discount_percent' => 'nullable|numeric|min:0|max:100',
 
         'comment'           => 'nullable|string|max:1000',
 
@@ -537,7 +562,7 @@ public function checkout(Request $request)
         'payments.*.reference_no' => 'nullable|string|max:255',
     ]);
 
-    // ✅ backend check: only one discount type allowed
+    // Only one discount type allowed
     $discAmountIn  = (float) ($data['cart_discount'] ?? 0);
     $discPercentIn = (float) ($data['cart_discount_percent'] ?? 0);
 
@@ -562,10 +587,12 @@ public function checkout(Request $request)
         );
     }
 
-    try {
-        $sale = \DB::transaction(function () use ($data, $customerName, $customerMobile, $request, $discAmountIn, $discPercentIn) {
+    // ✅ cost mode only for vendor + toggle
+    $useCostPrice = !empty($data['vendor_id']) && !empty($data['use_cost_price']);
 
-            // 1) Create Sale
+    try {
+        $sale = \DB::transaction(function () use ($data, $customerName, $customerMobile, $request, $discAmountIn, $discPercentIn, $useCostPrice) {
+
             $sale = \App\Models\Sale::create([
                 'vendor_id'       => $data['vendor_id'] ?? null,
                 'customer_name'   => $customerName,
@@ -581,7 +608,6 @@ public function checkout(Request $request)
                 'comment'         => $data['comment'] ?? null,
             ]);
 
-            // 2) Items & stock
             $gross = 0.0;
 
             foreach ($data['items'] as $item) {
@@ -595,10 +621,28 @@ public function checkout(Request $request)
                         '. Remaining: ' . $batch->qty_remaining);
                 }
 
-                $qty       = (int) $item['qty'];
-                $unitPrice = (float) $item['price'];
-                $line      = $unitPrice * $qty;
-                $gross    += $line;
+                $qty = (int) $item['qty'];
+
+                // ✅ SAFE FALLBACKS for cost attribute names
+                $costValue = (float) (
+                    $batch->getAttribute('cost_price')
+                    ?? $batch->getAttribute('costPrice')
+                    ?? $batch->getAttribute('purchase_price')
+                    ?? $batch->getAttribute('purchasePrice')
+                    ?? $batch->getAttribute('buy_price')
+                    ?? $batch->getAttribute('buyPrice')
+                    ?? $batch->getAttribute('cost')
+                    ?? 0
+                );
+
+                $unitPrice = $useCostPrice ? $costValue : (float) $item['price'];
+
+                if ($useCostPrice && $unitPrice <= 0) {
+                    throw new \Exception('Cost price is not set for batch ' . $batch->barcode);
+                }
+
+                $line   = $unitPrice * $qty;
+                $gross += $line;
 
                 \App\Models\SaleItem::create([
                     'sale_id'            => $sale->id,
@@ -613,14 +657,10 @@ public function checkout(Request $request)
                 $batch->decrement('qty_remaining', $qty);
             }
 
-            // 3) Totals (✅ support amount OR percent)
+            // Totals
             $discount = 0.0;
-
-            if ($discPercentIn > 0) {
-                $discount = $gross * ($discPercentIn / 100);
-            } else {
-                $discount = $discAmountIn;
-            }
+            if ($discPercentIn > 0) $discount = $gross * ($discPercentIn / 100);
+            else $discount = $discAmountIn;
 
             if ($discount < 0) $discount = 0;
             if ($discount > $gross) $discount = $gross;
@@ -631,12 +671,11 @@ public function checkout(Request $request)
             $sale->discount_amount = $discount;
             $sale->save();
 
-            // 4) Payments logic (UNCHANGED)
+            // Payments (UNCHANGED)
             $paymentsInput = $request->input('payments', []);
             $hasPayments   = is_array($paymentsInput) && count($paymentsInput) > 0;
 
             if (!empty($data['vendor_id'])) {
-                // Vendor ledger: debit full net
                 \App\Models\Accounts::create([
                     'vendor_id'   => $data['vendor_id'],
                     'Debit'       => $sale->total_amount,
@@ -733,7 +772,6 @@ public function checkout(Request $request)
                 $sale->save();
 
             } else {
-                // Walk-in: MUST record full payment
                 if ($hasPayments) {
                     $soFar = 0.0;
                     foreach ($paymentsInput as $p) {
